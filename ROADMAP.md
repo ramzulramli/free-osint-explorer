@@ -1,177 +1,223 @@
 
 ---
 
-# 3. `ROADMAP.md`
+### 2. `ROADMAP.md`
 
-This is our **master plan**.
-
-Copy:
+This is the **master development plan**.
 
 ```markdown
 # Free OSINT Explorer — Roadmap
 
-## Phase 1 — Foundation
+## Phase 0 — Infrastructure
+
+Status: COMPLETE
 
 - [x] GitHub repository
 - [x] Cloudflare Worker
-- [x] Automatic deployment
-- [x] Worker URL
-- [x] Basic API
-- [x] `/search`
-- [x] DuckDuckGo provider
-- [x] Search result parsing
-- [x] URL normalization
-- [x] `/fetch`
+- [x] GitHub → Cloudflare deployment
+- [x] Production Worker URL
+- [x] Browser-based development
 
 ---
 
-# Phase 2 — Web Content
+# Phase 1 — Search
 
-- [ ] `/read`
-- [ ] HTMLRewriter
-- [ ] Extract page title
-- [ ] Extract visible text
-- [ ] Extract links
+Status: COMPLETE
+
+- [x] `/search`
+- [x] DuckDuckGo provider
+- [x] Search result parsing
+- [x] URL decoding
+- [x] Advertisement filtering
+- [x] Duplicate removal
+- [x] Search testing
+
+Future:
+
+- [ ] Search provider abstraction
+- [ ] Additional providers if viable
+- [ ] Search result ranking
+
+---
+
+# Phase 2 — Web Reading
+
+Status: MOSTLY COMPLETE
+
+- [x] `/fetch`
+- [x] `/read`
+- [x] HTML fetching
+- [x] Title extraction
+- [x] Text extraction
+- [x] Link extraction
+- [x] Relative URL normalization
+- [x] Duplicate link removal
+
+Next:
+
+- [ ] Test real news/article pages
+- [ ] Improve article extraction
 - [ ] Extract metadata
 - [ ] Detect page type
-- [ ] Handle PDFs where practical
-- [ ] Handle common social/news pages
+- [ ] Handle PDFs
 
 ---
 
 # Phase 3 — Entity Extraction
 
-- [ ] Person detection
-- [ ] Organisation detection
-- [ ] Location detection
-- [ ] Username detection
-- [ ] URL extraction
+Status: NEXT
+
+- [ ] Person extraction
+- [ ] Organisation extraction
+- [ ] Location extraction
+- [ ] Username extraction
+- [ ] Website extraction
 - [ ] Email extraction
 - [ ] Phone extraction
 - [ ] Date extraction
 - [ ] Keyword extraction
 - [ ] Entity normalization
-- [ ] Duplicate entity detection
+- [ ] Entity deduplication
 
 ---
 
-# Phase 4 — Intelligence Engine
+# Phase 4 — Discovery Intelligence
+
+Status: PLANNED
 
 - [ ] Relevance scoring
 - [ ] Entity confidence
 - [ ] Source confidence
-- [ ] Candidate ranking
-- [ ] Search query generation
 - [ ] Related keyword generation
+- [ ] Search query generation
 - [ ] Discovery queue
-- [ ] Recursive investigation
-- [ ] Maximum depth
-- [ ] Maximum pages
-- [ ] Maximum searches
-- [ ] Duplicate prevention
+- [ ] Priority queue
+- [ ] Duplicate investigation prevention
 
 ---
 
-# Phase 5 — Knowledge Graph
+# Phase 5 — Recursive Crawler
+
+Status: PLANNED
+
+- [ ] Seed investigation
+- [ ] Depth 0
+- [ ] Depth 1
+- [ ] Depth 2
+- [ ] Maximum depth
+- [ ] Maximum pages
+- [ ] Maximum searches
+- [ ] Maximum entities
+- [ ] Execution limits
+- [ ] Relevance threshold
+- [ ] Domain controls
+
+---
+
+# Phase 6 — Knowledge Graph
+
+Status: PLANNED
 
 - [ ] Entity nodes
 - [ ] Relationship edges
 - [ ] Source relationships
-- [ ] Entity confidence
-- [ ] Relationship confidence
-- [ ] Graph storage
+- [ ] Confidence
+- [ ] Graph data structure
 - [ ] Graph visualization
-- [ ] Interactive exploration
-- [ ] Mind map
-
----
-
-# Phase 6 — Investigation UI
-
-- [ ] Search box
-- [ ] Investigation settings
-- [ ] Progress indicator
-- [ ] Search results
-- [ ] Entity list
-- [ ] Relationship list
-- [ ] Source list
-- [ ] Graph view
+- [ ] Interactive mind map
 - [ ] Timeline
-- [ ] Findings panel
 
 ---
 
-# Phase 7 — Reporting
+# Phase 7 — Investigation UI
+
+Status: PLANNED
+
+- [ ] Search interface
+- [ ] Investigation configuration
+- [ ] Progress indicator
+- [ ] Results page
+- [ ] Entity explorer
+- [ ] Source explorer
+- [ ] Relationship explorer
+- [ ] Mind map
+- [ ] Timeline
+- [ ] Evidence panel
+
+---
+
+# Phase 8 — Reporting
+
+Status: PLANNED
 
 - [ ] Investigation summary
-- [ ] Source citations
-- [ ] Entity report
-- [ ] Relationship report
+- [ ] Key findings
+- [ ] Entity table
+- [ ] Source table
+- [ ] Relationship table
 - [ ] Timeline
 - [ ] Confidence indicators
 - [ ] Limitations
 - [ ] HTML report
 - [ ] PDF export
-- [ ] Archive investigation
+- [ ] Archive/export
 
 ---
 
-# Phase 8 — Advanced Features
+# Phase 9 — Advanced OSINT
 
-- [ ] Multiple search providers
-- [ ] Domain-specific searching
-- [ ] Social media discovery
-- [ ] News discovery
-- [ ] Historical information
-- [ ] Alias discovery
-- [ ] Cross-source identity matching
-- [ ] Relationship inference
-- [ ] Change detection
-- [ ] Investigation comparison
+Status: FUTURE
 
----
+Possible capabilities:
 
-# Phase 9 — Security
+- [ ] Username correlation
+- [ ] Domain intelligence
+- [ ] Email correlation
+- [ ] Social-media discovery
+- [ ] Image metadata
+- [ ] Reverse-image search integration
+- [ ] Historical webpages
+- [ ] DNS information
+- [ ] Certificate information
+- [ ] WHOIS/RDAP
+- [ ] RSS/news monitoring
+- [ ] Document metadata
+- [ ] Cross-source correlation
 
-- [ ] SSRF protection
-- [ ] Private IP blocking
-- [ ] Internal hostname blocking
-- [ ] Redirect validation
-- [ ] URL allow/deny rules
-- [ ] Rate limiting
-- [ ] Request limits
-- [ ] Crawl depth limits
-- [ ] Content size limits
-- [ ] Abuse protection
+These will only be added where technically and legally appropriate and where free/public access is practical.
 
 ---
 
-# Phase 10 — Cost Optimization
+# Phase 10 — Optimization
 
-Target:
+Status: FUTURE
 
-RM0 for occasional personal use.
-
-Principles:
-
-- Use free Cloudflare capabilities where practical.
-- Avoid paid search APIs unless absolutely necessary.
-- Avoid always-running infrastructure.
-- Prefer on-demand execution.
-- Cache results when possible.
-- Avoid duplicate searches.
-- Limit recursive crawling.
-- Archive completed investigations instead of repeatedly crawling.
+- [ ] Cache repeated searches
+- [ ] Cache webpage reads
+- [ ] Reduce duplicate requests
+- [ ] Improve scoring
+- [ ] Improve extraction
+- [ ] Reduce Worker execution time
+- [ ] Reduce resource consumption
+- [ ] Improve investigation speed
 
 ---
 
 # Current Priority
 
-Complete Phase 2:
+The immediate development order is:
 
-1. `/read`
-2. HTML cleaning
-3. Link extraction
-4. Metadata extraction
+1. Test `/read` on a real article.
+2. Improve `/read` if required.
+3. Build entity extraction.
+4. Build entity normalization.
+5. Build relevance scoring.
+6. Build discovery queue.
+7. Build recursive investigation.
+8. Build graph.
+9. Build UI.
+10. Build reporting/PDF.
 
-Then begin Phase 3.
+Do not jump directly to the full crawler.
+
+Each stage must be tested before moving to the next stage.
