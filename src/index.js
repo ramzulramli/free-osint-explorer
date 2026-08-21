@@ -65,7 +65,10 @@ const SEARCH_PROVIDERS = {
       }
 
       // Only accept HTTP/HTTPS
-      if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
+      if (
+        !finalUrl.startsWith("http://") &&
+        !finalUrl.startsWith("https://")
+      ) {
         continue;
       }
 
@@ -84,7 +87,7 @@ const SEARCH_PROVIDERS = {
         .trim();
 
       const snippetMatch = block.match(
-        /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/
+        /class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|div)>/
       );
 
       const snippet = snippetMatch
@@ -111,9 +114,133 @@ const SEARCH_PROVIDERS = {
   }
 };
 
+
+/*
+==================================================
+UTILITY FUNCTIONS
+==================================================
+*/
+
+function decodeHtmlEntities(text) {
+  return text
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
+}
+
+
+function extractTitle(html) {
+  const match = html.match(
+    /<title[^>]*>([\s\S]*?)<\/title>/i
+  );
+
+  if (!match) {
+    return "";
+  }
+
+  return decodeHtmlEntities(
+    match[1]
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
+
+function extractLinks(html, baseUrl) {
+  const links = [];
+  const seenUrls = new Set();
+
+  const linkRegex =
+    /<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+
+  let match;
+
+  while ((match = linkRegex.exec(html)) !== null) {
+    const href = match[1].trim();
+
+    if (!href) {
+      continue;
+    }
+
+    try {
+      const absoluteUrl = new URL(href, baseUrl);
+
+      // Only HTTP/HTTPS links
+      if (
+        absoluteUrl.protocol !== "http:" &&
+        absoluteUrl.protocol !== "https:"
+      ) {
+        continue;
+      }
+
+      const finalUrl = absoluteUrl.toString();
+
+      if (seenUrls.has(finalUrl)) {
+        continue;
+      }
+
+      seenUrls.add(finalUrl);
+
+      const linkText = decodeHtmlEntities(
+        match[2]
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+      );
+
+      links.push({
+        text: linkText,
+        url: finalUrl
+      });
+
+    } catch {
+      // Ignore malformed URLs
+    }
+  }
+
+  return links;
+}
+
+
+function extractReadableText(html) {
+  const cleaned = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ");
+
+  return decodeHtmlEntities(
+    cleaned
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
+
+/*
+==================================================
+CLOUDFLARE WORKER
+==================================================
+*/
+
 export default {
   async fetch(request, env) {
+
     const url = new URL(request.url);
+
+
+    /*
+    ==================================================
+    HOME
+    ==================================================
+    */
 
     if (url.pathname === "/") {
       return Response.json({
@@ -123,7 +250,15 @@ export default {
       });
     }
 
+
+    /*
+    ==================================================
+    SEARCH
+    ==================================================
+    */
+
     if (url.pathname === "/search") {
+
       const query = url.searchParams.get("q")?.trim();
 
       if (!query) {
@@ -137,13 +272,17 @@ export default {
       }
 
       try {
-        const result = await SEARCH_PROVIDERS.duckduckgo(query);
+
+        const result =
+          await SEARCH_PROVIDERS.duckduckgo(query);
 
         return Response.json({
           status: "success",
           ...result
         });
+
       } catch (error) {
+
         return Response.json(
           {
             status: "error",
@@ -151,10 +290,21 @@ export default {
           },
           { status: 502 }
         );
+
       }
     }
+
+
+    /*
+    ==================================================
+    FETCH
+    ==================================================
+    */
+
     if (url.pathname === "/fetch") {
-      const target = url.searchParams.get("url")?.trim();
+
+      const target =
+        url.searchParams.get("url")?.trim();
 
       if (!target) {
         return Response.json(
@@ -167,30 +317,43 @@ export default {
       }
 
       try {
+
         const targetUrl = new URL(target);
 
-        if (!["http:", "https:"].includes(targetUrl.protocol)) {
-          throw new Error("Only HTTP and HTTPS URLs are allowed");
+        if (
+          !["http:", "https:"]
+            .includes(targetUrl.protocol)
+        ) {
+          throw new Error(
+            "Only HTTP and HTTPS URLs are allowed"
+          );
         }
 
-        const response = await fetch(targetUrl.toString(), {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (compatible; FreeOSINTExplorer/0.1)"
+        const response = await fetch(
+          targetUrl.toString(),
+          {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (compatible; FreeOSINTExplorer/0.1)"
+            }
           }
-        });
+        );
 
-        const html = await response.text();
+        const html =
+          await response.text();
 
         return Response.json({
           status: "success",
           url: targetUrl.toString(),
           httpStatus: response.status,
-          contentType: response.headers.get("content-type"),
+          contentType:
+            response.headers.get("content-type"),
           contentLength: html.length,
           preview: html.substring(0, 1000)
         });
 
       } catch (error) {
+
         return Response.json(
           {
             status: "error",
@@ -198,10 +361,21 @@ export default {
           },
           { status: 502 }
         );
+
       }
     }
+
+
+    /*
+    ==================================================
+    READ
+    ==================================================
+    */
+
     if (url.pathname === "/read") {
-      const target = url.searchParams.get("url")?.trim();
+
+      const target =
+        url.searchParams.get("url")?.trim();
 
       if (!target) {
         return Response.json(
@@ -214,52 +388,84 @@ export default {
       }
 
       try {
+
         const targetUrl = new URL(target);
 
-        if (!["http:", "https:"].includes(targetUrl.protocol)) {
-          throw new Error("Only HTTP and HTTPS URLs are allowed");
+        if (
+          !["http:", "https:"]
+            .includes(targetUrl.protocol)
+        ) {
+          throw new Error(
+            "Only HTTP and HTTPS URLs are allowed"
+          );
         }
 
-        const response = await fetch(targetUrl.toString(), {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (compatible; FreeOSINTExplorer/0.1)"
+        const response = await fetch(
+          targetUrl.toString(),
+          {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (compatible; FreeOSINTExplorer/0.1)"
+            }
           }
-        });
+        );
 
         if (!response.ok) {
-          throw new Error(`Target returned HTTP ${response.status}`);
+          throw new Error(
+            `Target returned HTTP ${response.status}`
+          );
         }
 
-        const html = await response.text();
+        const html =
+          await response.text();
 
-        // Remove elements that normally do not contain useful readable content.
-        const cleaned = html
-          .replace(/<script[\s\S]*?<\/script>/gi, " ")
-          .replace(/<style[\s\S]*?<\/style>/gi, " ")
-          .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
-          .replace(/<!--[\s\S]*?-->/g, " ");
 
-        // Convert remaining HTML into plain text.
-        const text = cleaned
-          .replace(/<[^>]+>/g, " ")
-          .replace(/&nbsp;/gi, " ")
-          .replace(/&amp;/gi, "&")
-          .replace(/&quot;/gi, '"')
-          .replace(/&#39;/gi, "'")
-          .replace(/&lt;/gi, "<")
-          .replace(/&gt;/gi, ">")
-          .replace(/\s+/g, " ")
-          .trim();
+        // Extract title
+        const title =
+          extractTitle(html);
+
+
+        // Extract readable text
+        const text =
+          extractReadableText(html);
+
+
+        // Extract hyperlinks
+        const links =
+          extractLinks(
+            html,
+            targetUrl.toString()
+          );
+
 
         return Response.json({
+
           status: "success",
-          url: targetUrl.toString(),
-          httpStatus: response.status,
-          textLength: text.length,
-          text: text.substring(0, 10000)
+
+          url:
+            targetUrl.toString(),
+
+          httpStatus:
+            response.status,
+
+          title,
+
+          textLength:
+            text.length,
+
+          text:
+            text.substring(0, 10000),
+
+          linkCount:
+            links.length,
+
+          links:
+            links.slice(0, 100)
+
         });
 
       } catch (error) {
+
         return Response.json(
           {
             status: "error",
@@ -267,13 +473,23 @@ export default {
           },
           { status: 502 }
         );
+
       }
     }
+
+
+    /*
+    ==================================================
+    UNKNOWN ROUTE
+    ==================================================
+    */
+
     return Response.json(
       {
         error: "Not found"
       },
       { status: 404 }
     );
+
   }
 };
