@@ -1,9 +1,24 @@
 const SEARCH_PROVIDERS = {
-  demo: async (query) => {
+  duckduckgo: async (query) => {
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+
+    const response = await fetch(searchUrl, {
+      headers: {
+        "User-Agent": "FreeOSINTExplorer/0.1"
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Search provider returned ${response.status}`);
+    }
+
+    const html = await response.text();
+
     return {
-      provider: "demo",
+      provider: "duckduckgo",
       query,
-      results: []
+      resultCount: (html.match(/result__a/g) || []).length,
+      rawLength: html.length
     };
   }
 };
@@ -33,13 +48,23 @@ export default {
         );
       }
 
-      const provider = SEARCH_PROVIDERS.demo;
-      const result = await provider(query);
+      try {
+        const provider = SEARCH_PROVIDERS.duckduckgo;
+        const result = await provider(query);
 
-      return Response.json({
-        status: "success",
-        ...result
-      });
+        return Response.json({
+          status: "success",
+          ...result
+        });
+      } catch (error) {
+        return Response.json(
+          {
+            status: "error",
+            message: error.message
+          },
+          { status: 502 }
+        );
+      }
     }
 
     return Response.json(
