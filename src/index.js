@@ -1,13 +1,27 @@
+const SEARCH_PROVIDERS = {
+  demo: async (query) => {
+    return {
+      provider: "demo",
+      query,
+      results: []
+    };
+  }
+};
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
     if (url.pathname === "/") {
-      return new Response("Free OSINT Explorer is alive.");
+      return Response.json({
+        name: "Free OSINT Explorer",
+        status: "online",
+        version: "0.1.0"
+      });
     }
 
     if (url.pathname === "/search") {
-      const query = url.searchParams.get("q");
+      const query = url.searchParams.get("q")?.trim();
 
       if (!query) {
         return Response.json(
@@ -19,13 +33,20 @@ export default {
         );
       }
 
+      const provider = SEARCH_PROVIDERS.demo;
+      const result = await provider(query);
+
       return Response.json({
-        query: query,
-        status: "received",
-        message: "Search engine coming next."
+        status: "success",
+        ...result
       });
     }
 
-    return new Response("Not found", { status: 404 });
+    return Response.json(
+      {
+        error: "Not found"
+      },
+      { status: 404 }
+    );
   }
 };
