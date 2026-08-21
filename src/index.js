@@ -200,6 +200,85 @@ export default {
         );
       }
     }
+        if (url.pathname === "/read") {
+      const target = url.searchParams.get("url")?.trim();
+
+      if (!target) {
+        return Response.json(
+          {
+            error: "Missing URL",
+            usage: "/read?url=https://example.com"
+          },
+          { status: 400 }
+        );
+      }
+
+      try {
+        const targetUrl = new URL(target);
+
+        if (!["http:", "https:"].includes(targetUrl.protocol)) {
+          throw new Error("Only HTTP and HTTPS URLs are allowed");
+        }
+
+        const response = await fetch(targetUrl.toString(), {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (compatible; FreeOSINTExplorer/0.1)"
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`Target returned HTTP ${response.status}`);
+        }
+
+        let text = "";
+
+        class TextCollector {
+          element(element) {
+            const tag = element.tagName.toLowerCase();
+
+            if (
+              tag === "script" ||
+              tag === "style" ||
+              tag === "noscript"
+            ) {
+              element.removeAndPreserveContent();
+            }
+          }
+
+          text(textChunk) {
+            text += textChunk.text;
+          }
+        }
+
+        const rewriter = new HTMLRewriter();
+
+        rewriter.on("*", new TextCollector());
+
+        await rewriter.transform(response).arrayBuffer();
+
+        text = text
+          .replace(/\s+/g, " ")
+          .trim();
+
+        return Response.json({
+          status: "success",
+          url: targetUrl.toString(),
+          httpStatus: response.status,
+          textLength: text.length,
+          text: text.substring(0, 10000)
+        });
+
+      } catch (error) {
+        return Response.json(
+          {
+            status: "error",
+            message: error.message
+          },
+          { status: 502 }
+        );
+      }
+    }
+    
     return Response.json(
       {
         error: "Not found"
