@@ -91,18 +91,75 @@ Current behaviour:
 - Removes obvious advertisements.
 - Removes duplicate URLs.
 
-Example successful result:
+Successfully tested with:
+
+- `liverpool`
+- `Alicia Amin`
+- `Alicia Amin tattoo`
+
+---
+
+## `/fetch`
+
+Example:
+
+`/fetch?url=https%3A%2F%2Fexample.com`
+
+Current behaviour:
+
+- Accepts HTTP/HTTPS URLs.
+- Fetches public webpages.
+- Returns:
+  - URL
+  - HTTP status
+  - content type
+  - content length
+  - HTML preview.
+
+Successfully tested with:
+
+`https://example.com`
+
+---
+
+## `/read`
+
+Example:
+
+`/read?url=https%3A%2F%2Fexample.com`
+
+Current behaviour:
+
+- Accepts HTTP/HTTPS URLs.
+- Fetches public webpages.
+- Extracts page title.
+- Removes scripts, styles, noscript, SVG and comments.
+- Converts HTML into readable plain text.
+- Extracts hyperlinks.
+- Converts relative links into absolute URLs.
+- Removes duplicate links.
+- Returns up to 10,000 characters of readable text.
+- Returns up to 100 extracted links.
+
+Successfully tested with:
+
+`https://example.com`
+
+Successful output included:
 
 ```json
 {
   "status": "success",
-  "provider": "duckduckgo",
-  "query": "Alicia Amin",
-  "results": [
+  "url": "https://example.com/",
+  "httpStatus": 200,
+  "title": "Example Domain",
+  "textLength": 142,
+  "text": "Example Domain Example Domain This domain is for use in documentation examples without needing permission. Avoid use in operations. Learn more",
+  "linkCount": 1,
+  "links": [
     {
-      "title": "Alicia Amin (@hangriii) • Instagram photos and videos",
-      "url": "https://www.instagram.com/hangriii/",
-      "snippet": "..."
+      "text": "Learn more",
+      "url": "https://iana.org/domains/example"
     }
   ]
 }
