@@ -1,6 +1,7 @@
 const SEARCH_PROVIDERS = {
   duckduckgo: async (query) => {
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    const searchUrl =
+      `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
 
     const response = await fetch(searchUrl, {
       headers: {
@@ -15,10 +16,21 @@ const SEARCH_PROVIDERS = {
     const html = await response.text();
 
     const results = [];
+    const seenUrls = new Set();
+
     const resultBlocks = html.split('class="result results_links');
 
     for (let i = 1; i < resultBlocks.length; i++) {
       const block = resultBlocks[i];
+
+      // Skip advertisements
+      if (
+        block.includes("result--ad") ||
+        block.includes("ad_provider") ||
+        block.includes("ad_domain")
+      ) {
+        continue;
+      }
 
       const linkMatch = block.match(
         /class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/
@@ -28,7 +40,41 @@ const SEARCH_PROVIDERS = {
         continue;
       }
 
-      const url = decodeURIComponent(linkMatch[1]);
+      let rawUrl = linkMatch[1];
+
+      // Convert relative URL to absolute URL
+      if (rawUrl.startsWith("//")) {
+        rawUrl = "https:" + rawUrl;
+      }
+
+      let finalUrl;
+
+      try {
+        const parsed = new URL(rawUrl);
+
+        // DuckDuckGo redirect URL
+        const destination = parsed.searchParams.get("uddg");
+
+        if (destination) {
+          finalUrl = decodeURIComponent(destination);
+        } else {
+          finalUrl = parsed.toString();
+        }
+      } catch {
+        continue;
+      }
+
+      // Only accept HTTP/HTTPS
+      if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
+        continue;
+      }
+
+      // Remove duplicate URLs
+      if (seenUrls.has(finalUrl)) {
+        continue;
+      }
+
+      seenUrls.add(finalUrl);
 
       const title = linkMatch[2]
         .replace(/<[^>]*>/g, "")
@@ -52,7 +98,7 @@ const SEARCH_PROVIDERS = {
 
       results.push({
         title,
-        url,
+        url: finalUrl,
         snippet
       });
     }
@@ -91,8 +137,7 @@ export default {
       }
 
       try {
-        const provider = SEARCH_PROVIDERS.duckduckgo;
-        const result = await provider(query);
+        const result = await SEARCH_PROVIDERS.duckduckgo(query);
 
         return Response.json({
           status: "success",
