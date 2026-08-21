@@ -153,7 +153,53 @@ export default {
         );
       }
     }
+    if (url.pathname === "/fetch") {
+      const target = url.searchParams.get("url")?.trim();
 
+      if (!target) {
+        return Response.json(
+          {
+            error: "Missing URL",
+            usage: "/fetch?url=https://example.com"
+          },
+          { status: 400 }
+        );
+      }
+
+      try {
+        const targetUrl = new URL(target);
+
+        if (!["http:", "https:"].includes(targetUrl.protocol)) {
+          throw new Error("Only HTTP and HTTPS URLs are allowed");
+        }
+
+        const response = await fetch(targetUrl.toString(), {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (compatible; FreeOSINTExplorer/0.1)"
+          }
+        });
+
+        const html = await response.text();
+
+        return Response.json({
+          status: "success",
+          url: targetUrl.toString(),
+          httpStatus: response.status,
+          contentType: response.headers.get("content-type"),
+          contentLength: html.length,
+          preview: html.substring(0, 1000)
+        });
+
+      } catch (error) {
+        return Response.json(
+          {
+            status: "error",
+            message: error.message
+          },
+          { status: 502 }
+        );
+      }
+    }
     return Response.json(
       {
         error: "Not found"
