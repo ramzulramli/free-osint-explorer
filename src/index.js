@@ -11,7 +11,10 @@ export default {
 
       if (!query) {
         return Response.json(
-          { error: "Missing search query. Use /search?q=keyword" },
+          {
+            error: "Missing search query",
+            usage: "/search?q=keyword"
+          },
           { status: 400 }
         );
       }
@@ -24,5 +27,5 @@ export default {
     }
 
     return new Response("Not found", { status: 404 });
-  },
+  }
 };
