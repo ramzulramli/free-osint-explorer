@@ -79,22 +79,24 @@ const SEARCH_PROVIDERS = {
 
       seenUrls.add(finalUrl);
 
-      const title = decodeHtmlEntities(
-        linkMatch[2]
-          .replace(/<[^>]*>/g, "")
-          .trim()
-      );
+      const title = linkMatch[2]
+        .replace(/<[^>]*>/g, "")
+        .replace(/&amp;/g, "&")
+        .replace(/&quot;/g, '"')
+        .replace(/&#x27;/g, "'")
+        .trim();
 
       const snippetMatch = block.match(
         /class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|div)>/
       );
 
       const snippet = snippetMatch
-        ? decodeHtmlEntities(
-            snippetMatch[1]
-              .replace(/<[^>]*>/g, "")
-              .trim()
-          )
+        ? snippetMatch[1]
+            .replace(/<[^>]*>/g, "")
+            .replace(/&amp;/g, "&")
+            .replace(/&quot;/g, '"')
+            .replace(/&#x27;/g, "'")
+            .trim()
         : "";
 
       results.push({
@@ -127,13 +129,7 @@ function decodeHtmlEntities(text) {
     .replace(/&#39;/gi, "'")
     .replace(/&#x27;/gi, "'")
     .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&#(\d+);/gi, (match, dec) =>
-      String.fromCharCode(dec)
-    )
-    .replace(/&#x([0-9a-f]+);/gi, (match, hex) =>
-      String.fromCharCode(parseInt(hex, 16))
-    );
+    .replace(/&gt;/gi, ">");
 }
 
 
@@ -230,363 +226,412 @@ function extractReadableText(html) {
 
 /*
 ==================================================
-PAGE READER
-==================================================
-*/
-
-async function readPage(targetUrl) {
-
-  const response = await fetch(
-    targetUrl.toString(),
-    {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (compatible; FreeOSINTExplorer/0.1)"
-      }
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      `Target returned HTTP ${response.status}`
-    );
-  }
-
-  const html = await response.text();
-
-  const title =
-    extractTitle(html);
-
-  const text =
-    extractReadableText(html);
-
-  const links =
-    extractLinks(
-      html,
-      targetUrl.toString()
-    );
-
-  return {
-    url: targetUrl.toString(),
-    httpStatus: response.status,
-    title,
-    text,
-    links
-  };
-}
-
-
-/*
-==================================================
 ENTITY EXTRACTION
 ==================================================
 */
 
-function addEntity(
-  entities,
-  seen,
-  type,
-  value,
-  confidence,
-  evidence
-) {
-  const cleanedValue = value
+const COMMON_NON_PERSON_WORDS = new Set([
+  "wikipedia",
+  "jump",
+  "navigation",
+  "main",
+  "contents",
+  "current",
+  "about",
+  "contact",
+  "contribute",
+  "help",
+  "learn",
+  "search",
+  "appearance",
+  "donate",
+  "create",
+  "account",
+  "article",
+  "talk",
+  "english",
+  "read",
+  "edit",
+  "view",
+  "history",
+  "tools",
+  "actions",
+  "general",
+  "what",
+  "from",
+  "personal",
+  "information",
+  "date",
+  "birth",
+  "place",
+  "height",
+  "position",
+  "youth",
+  "career",
+  "team",
+  "league",
+  "club",
+  "cup",
+  "season",
+  "apps",
+  "goals",
+  "total",
+  "international",
+  "statistics",
+  "reference",
+  "references",
+  "external",
+  "links",
+  "privacy",
+  "policy",
+  "foundation",
+  "creative",
+  "commons",
+  "attribution",
+  "conduct",
+  "developers",
+  "cookie",
+  "toggle",
+  "hidden",
+  "categories",
+  "malaysian",
+  "men",
+  "forward",
+  "striker",
+  "senior",
+  "junior"
+]);
+
+
+const COMMON_ORGANISATION_WORDS = [
+  "berhad",
+  "bhd",
+  "sdn",
+  "sendirian",
+  "foundation",
+  "association",
+  "university",
+  "corporation",
+  "company",
+  "limited",
+  "ltd",
+  "fc",
+  "f.c.",
+  "fa",
+  "f.a.",
+  "team",
+  "club"
+];
+
+
+function normalizeEntity(value) {
+  return value
     .replace(/\s+/g, " ")
-    .trim();
-
-  if (!cleanedValue) {
-    return;
-  }
-
-  const normalized =
-    cleanedValue.toLowerCase();
-
-  const key =
-    `${type}:${normalized}`;
-
-  if (seen.has(key)) {
-    return;
-  }
-
-  seen.add(key);
-
-  entities.push({
-    type,
-    value: cleanedValue,
-    normalized,
-    confidence,
-    evidence
-  });
+    .trim()
+    .toLowerCase();
 }
 
 
-function extractEntities(text, sourceUrl) {
+function cleanTextForEntities(text) {
+  return text
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  const entities = [];
+
+function isLikelyPersonName(value) {
+
+  const cleaned = value.trim();
+
+  if (!cleaned) {
+    return false;
+  }
+
+  const words = cleaned.split(/\s+/);
+
+  // Person names should normally contain 2-5 words
+  if (words.length < 2 || words.length > 5) {
+    return false;
+  }
+
+  // Reject very short or extremely long fragments
+  if (cleaned.length < 5 || cleaned.length > 100) {
+    return false;
+  }
+
+  const lowerWords = words.map(word =>
+    word
+      .replace(/[^a-zA-ZÀ-ÿ'-]/g, "")
+      .toLowerCase()
+  );
+
+  // Reject known UI / webpage garbage
+  if (
+    lowerWords.some(word =>
+      COMMON_NON_PERSON_WORDS.has(word)
+    )
+  ) {
+    return false;
+  }
+
+  // Reject obvious organisation terms
+  if (
+    lowerWords.some(word =>
+      COMMON_ORGANISATION_WORDS.includes(word)
+    )
+  ) {
+    return false;
+  }
+
+  // At least two words should look like proper names
+  const capitalizedCount = words.filter(word =>
+    /^[A-ZÀ-Ý][a-zà-ÿ'-]*$/.test(word)
+  ).length;
+
+  if (capitalizedCount < 2) {
+    return false;
+  }
+
+  return true;
+}
+
+
+function extractPersonCandidates(text) {
+
+  const candidates = [];
   const seen = new Set();
 
-
   /*
-  ================================================
-  EMAIL
-  ================================================
-  */
+   * Match normal capitalized names.
+   *
+   * Examples:
+   *
+   * Ramzul Ramli
+   * Ramzul Zahini Adenan
+   * Muhammad Ramzul Zahini bin Adenan
+   */
+  const nameRegex =
+    /\b[A-ZÀ-Ý][a-zà-ÿ'-]+(?:\s+(?:bin|binti|[A-ZÀ-Ý][a-zà-ÿ'-]+)){1,4}\b/g;
 
-  const emailRegex =
-    /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+  let match;
 
-  for (const match of text.matchAll(emailRegex)) {
+  while ((match = nameRegex.exec(text)) !== null) {
 
-    addEntity(
-      entities,
-      seen,
-      "email",
-      match[0],
-      1.0,
-      `Email address found in page text`
-    );
-  }
+    const value = match[0].trim();
 
+    if (!isLikelyPersonName(value)) {
+      continue;
+    }
 
-  /*
-  ================================================
-  PHONE
-  ================================================
-  */
+    const normalized = normalizeEntity(value);
 
-  const phoneRegex =
-    /(?<!\d)(?:\+?60|0)(?:1\d|[3-9]\d)[ -]?\d{3,4}[ -]?\d{4}(?!\d)/g;
+    if (seen.has(normalized)) {
+      continue;
+    }
 
-  for (const match of text.matchAll(phoneRegex)) {
+    seen.add(normalized);
 
-    addEntity(
-      entities,
-      seen,
-      "phone",
-      match[0],
-      0.95,
-      `Possible Malaysian phone number found in page text`
-    );
-  }
+    let confidence = 0.60;
 
+    // Malaysian naming pattern
+    if (/\b(bin|binti)\b/i.test(value)) {
+      confidence = 0.85;
+    }
 
-  /*
-  ================================================
-  URL
-  ================================================
-  */
-
-  const urlRegex =
-    /\bhttps?:\/\/[^\s<>"']+/gi;
-
-  for (const match of text.matchAll(urlRegex)) {
-
-    let value = match[0]
-      .replace(/[),.;]+$/, "");
-
-    addEntity(
-      entities,
-      seen,
-      "url",
+    candidates.push({
+      type: "person_candidate",
       value,
-      1.0,
-      `URL found in page text`
-    );
+      normalized,
+      confidence,
+      evidence: "Name-like phrase found in page text"
+    });
   }
 
-
-  /*
-  ================================================
-  USERNAME
-  ================================================
-  */
-
-  const usernameRegex =
-    /(^|\s)@([a-zA-Z0-9._-]{2,50})\b/g;
-
-  for (const match of text.matchAll(usernameRegex)) {
-
-    addEntity(
-      entities,
-      seen,
-      "username",
-      `@${match[2]}`,
-      0.95,
-      `Username-style @mention found in page text`
-    );
-  }
+  return candidates;
+}
 
 
-  /*
-  ================================================
-  DATE
-  ================================================
-  */
+function extractOrganisationCandidates(text) {
 
-  const dateRegex =
-    /\b(?:\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}|\d{4}[\/-]\d{1,2}[\/-]\d{1,2}|\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})\b/gi;
+  const candidates = [];
+  const seen = new Set();
 
-  for (const match of text.matchAll(dateRegex)) {
+  const organisationRegex =
+    /\b[A-ZÀ-Ý][A-Za-zÀ-ÿ&.'-]*(?:\s+[A-ZÀ-Ý][A-Za-zÀ-ÿ&.'-]*){0,6}\s+(?:Berhad|Bhd|Sdn Bhd|Foundation|Association|University|Corporation|Company|Limited|Ltd|FA|F\.A\.|FC|F\.C\.)\b/g;
 
-    addEntity(
-      entities,
-      seen,
-      "date",
-      match[0],
-      0.95,
-      `Date pattern found in page text`
-    );
-  }
+  let match;
 
-
-  /*
-  ================================================
-  YEAR
-  ================================================
-  */
-
-  const yearRegex =
-    /\b(?:19|20)\d{2}\b/g;
-
-  for (const match of text.matchAll(yearRegex)) {
-
-    addEntity(
-      entities,
-      seen,
-      "year",
-      match[0],
-      0.85,
-      `Four-digit year found in page text`
-    );
-  }
-
-
-  /*
-  ================================================
-  PERSON CANDIDATES
-  ================================================
-  */
-
-  const personRegex =
-    /\b(?:[A-Z][a-z]+(?:\s+(?:[A-Z][a-z]+|bin|binti|bt|bte|[A-Z]\.))+)\b/g;
-
-  for (const match of text.matchAll(personRegex)) {
+  while ((match = organisationRegex.exec(text)) !== null) {
 
     const value = match[0]
       .replace(/\s+/g, " ")
       .trim();
 
-    /*
-     * Avoid obvious generic phrases.
-     */
-    const excluded = [
-      "Main Menu",
-      "Main Page",
-      "Current Events",
-      "Random Article",
-      "About Wikipedia",
-      "Contact Wikipedia",
-      "Recent Changes",
-      "Create Account",
-      "Personal Tools",
-      "Club Career",
-      "International Career",
-      "Career Statistics",
-      "External Links"
-    ];
-
-    if (excluded.includes(value)) {
+    if (value.length < 4) {
       continue;
     }
 
-    addEntity(
-      entities,
-      seen,
-      "person_candidate",
+    const normalized = normalizeEntity(value);
+
+    if (seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+
+    candidates.push({
+      type: "organisation_candidate",
       value,
-      0.60,
-      `Name-like capitalized phrase found in page text`
-    );
+      normalized,
+      confidence: 0.70,
+      evidence: "Organisation-like phrase found in page text"
+    });
   }
 
+  return candidates;
+}
 
-  /*
-  ================================================
-  LOCATION / ORGANISATION CANDIDATES
-  ================================================
-  */
 
-  const knownLocations = [
+function extractLocationCandidates(text) {
+
+  const locations = [
     "Malaysia",
     "Selangor",
     "Kuala Lumpur",
-    "Kelantan",
     "Terengganu",
+    "Kelantan",
     "Johor",
     "Penang",
     "Perak",
     "Pahang",
+    "Negeri Sembilan",
+    "Melaka",
     "Sabah",
     "Sarawak",
+    "Putrajaya",
+    "Labuan",
+    "Shah Alam",
+    "Petaling Jaya",
+    "Klang",
     "Tumpat",
-    "Wakaf Bharu"
+    "Wakaf Bharu",
+    "Kota Bharu",
+    "Kuala Terengganu"
   ];
 
-  for (const location of knownLocations) {
+  const candidates = [];
+  const seen = new Set();
 
-    const locationRegex =
-      new RegExp(
-        `\\b${location.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
-        "gi"
-      );
+  for (const location of locations) {
 
-    if (locationRegex.test(text)) {
-
-      addEntity(
-        entities,
-        seen,
-        "location_candidate",
-        location,
-        0.85,
-        `Known Malaysian location found in page text`
-      );
-    }
-  }
-
-
-  /*
-  ================================================
-  COMMON ORGANISATION PATTERNS
-  ================================================
-  */
-
-  const organisationRegex =
-    /\b[A-Z][A-Za-z0-9&.-]*(?:\s+[A-Z][A-Za-z0-9&.-]*)*\s+(?:FA|FC|F\.C\.|Berhad|Bhd|Sdn\.?\s+Bhd|Corporation|Company|University|Institute|Association|Department|Agency|Group|Foundation)\b/g;
-
-  for (const match of text.matchAll(organisationRegex)) {
-
-    addEntity(
-      entities,
-      seen,
-      "organisation_candidate",
-      match[0],
-      0.65,
-      `Organisation-like phrase found in page text`
+    const regex = new RegExp(
+      `\\b${location.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+      "gi"
     );
+
+    if (!regex.test(text)) {
+      continue;
+    }
+
+    const normalized = normalizeEntity(location);
+
+    if (seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+
+    candidates.push({
+      type: "location_candidate",
+      value: location,
+      normalized,
+      confidence: 0.85,
+      evidence: "Known Malaysian location found in page text"
+    });
   }
 
+  return candidates;
+}
 
-  /*
-  ================================================
-  SOURCE INFORMATION
-  ================================================
-  */
 
-  return {
-    sourceUrl,
-    entityCount: entities.length,
-    entities
-  };
+function extractDates(text) {
+
+  const candidates = [];
+  const seen = new Set();
+
+  const dateRegex =
+    /\b(?:\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}|\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})\b/gi;
+
+  let match;
+
+  while ((match = dateRegex.exec(text)) !== null) {
+
+    const value = match[0].trim();
+    const normalized = normalizeEntity(value);
+
+    if (seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+
+    candidates.push({
+      type: "date",
+      value,
+      normalized,
+      confidence: 0.95,
+      evidence: "Date pattern found in page text"
+    });
+  }
+
+  return candidates;
+}
+
+
+function extractYears(text) {
+
+  const candidates = [];
+  const seen = new Set();
+
+  const yearRegex = /\b(?:19|20)\d{2}\b/g;
+
+  let match;
+
+  while ((match = yearRegex.exec(text)) !== null) {
+
+    const value = match[0];
+
+    if (seen.has(value)) {
+      continue;
+    }
+
+    seen.add(value);
+
+    candidates.push({
+      type: "year",
+      value,
+      normalized: value,
+      confidence: 0.85,
+      evidence: "Four-digit year found in page text"
+    });
+  }
+
+  return candidates;
+}
+
+
+function extractEntityCandidates(text) {
+
+  const cleaned =
+    cleanTextForEntities(text);
+
+  return [
+    ...extractPersonCandidates(cleaned),
+    ...extractOrganisationCandidates(cleaned),
+    ...extractLocationCandidates(cleaned),
+    ...extractDates(cleaned),
+    ...extractYears(cleaned)
+  ];
 }
 
 
@@ -599,8 +644,7 @@ CLOUDFLARE WORKER
 export default {
   async fetch(request, env) {
 
-    const url =
-      new URL(request.url);
+    const url = new URL(request.url);
 
 
     /*
@@ -616,6 +660,7 @@ export default {
         status: "online",
         version: "0.2.0"
       });
+
     }
 
 
@@ -639,6 +684,7 @@ export default {
           },
           { status: 400 }
         );
+
       }
 
       try {
@@ -660,6 +706,7 @@ export default {
           },
           { status: 502 }
         );
+
       }
     }
 
@@ -680,11 +727,11 @@ export default {
         return Response.json(
           {
             error: "Missing URL",
-            usage:
-              "/fetch?url=https://example.com"
+            usage: "/fetch?url=https://example.com"
           },
           { status: 400 }
         );
+
       }
 
       try {
@@ -700,6 +747,7 @@ export default {
           throw new Error(
             "Only HTTP and HTTPS URLs are allowed"
           );
+
         }
 
         const response =
@@ -727,9 +775,7 @@ export default {
             response.status,
 
           contentType:
-            response.headers.get(
-              "content-type"
-            ),
+            response.headers.get("content-type"),
 
           contentLength:
             html.length,
@@ -748,6 +794,7 @@ export default {
           },
           { status: 502 }
         );
+
       }
     }
 
@@ -768,11 +815,11 @@ export default {
         return Response.json(
           {
             error: "Missing URL",
-            usage:
-              "/read?url=https://example.com"
+            usage: "/read?url=https://example.com"
           },
           { status: 400 }
         );
+
       }
 
       try {
@@ -788,35 +835,69 @@ export default {
           throw new Error(
             "Only HTTP and HTTPS URLs are allowed"
           );
+
         }
 
-        const page =
-          await readPage(targetUrl);
+        const response =
+          await fetch(
+            targetUrl.toString(),
+            {
+              headers: {
+                "User-Agent":
+                  "Mozilla/5.0 (compatible; FreeOSINTExplorer/0.1)"
+              }
+            }
+          );
+
+        if (!response.ok) {
+
+          throw new Error(
+            `Target returned HTTP ${response.status}`
+          );
+
+        }
+
+        const html =
+          await response.text();
+
+        // Extract title
+        const title =
+          extractTitle(html);
+
+        // Extract readable text
+        const text =
+          extractReadableText(html);
+
+        // Extract hyperlinks
+        const links =
+          extractLinks(
+            html,
+            targetUrl.toString()
+          );
 
         return Response.json({
 
           status: "success",
 
           url:
-            page.url,
+            targetUrl.toString(),
 
           httpStatus:
-            page.httpStatus,
+            response.status,
 
-          title:
-            page.title,
+          title,
 
           textLength:
-            page.text.length,
+            text.length,
 
           text:
-            page.text.substring(0, 10000),
+            text.substring(0, 10000),
 
           linkCount:
-            page.links.length,
+            links.length,
 
           links:
-            page.links.slice(0, 100)
+            links.slice(0, 100)
 
         });
 
@@ -829,6 +910,7 @@ export default {
           },
           { status: 502 }
         );
+
       }
     }
 
@@ -849,11 +931,11 @@ export default {
         return Response.json(
           {
             error: "Missing URL",
-            usage:
-              "/entities?url=https://example.com"
+            usage: "/entities?url=https://example.com"
           },
           { status: 400 }
         );
+
       }
 
       try {
@@ -869,38 +951,59 @@ export default {
           throw new Error(
             "Only HTTP and HTTPS URLs are allowed"
           );
+
         }
 
-        const page =
-          await readPage(targetUrl);
-
-        const extraction =
-          extractEntities(
-            page.text,
-            page.url
+        const response =
+          await fetch(
+            targetUrl.toString(),
+            {
+              headers: {
+                "User-Agent":
+                  "Mozilla/5.0 (compatible; FreeOSINTExplorer/0.1)"
+              }
+            }
           );
+
+        if (!response.ok) {
+
+          throw new Error(
+            `Target returned HTTP ${response.status}`
+          );
+
+        }
+
+        const html =
+          await response.text();
+
+        const title =
+          extractTitle(html);
+
+        const text =
+          extractReadableText(html);
+
+        const entities =
+          extractEntityCandidates(text);
 
         return Response.json({
 
           status: "success",
 
           url:
-            page.url,
+            targetUrl.toString(),
 
           httpStatus:
-            page.httpStatus,
+            response.status,
 
-          title:
-            page.title,
+          title,
 
           textLength:
-            page.text.length,
+            text.length,
 
           entityCount:
-            extraction.entityCount,
+            entities.length,
 
-          entities:
-            extraction.entities
+          entities
 
         });
 
@@ -913,6 +1016,7 @@ export default {
           },
           { status: 502 }
         );
+
       }
     }
 
