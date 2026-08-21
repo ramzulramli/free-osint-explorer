@@ -200,7 +200,7 @@ export default {
         );
       }
     }
-        if (url.pathname === "/read") {
+    if (url.pathname === "/read") {
       const target = url.searchParams.get("url")?.trim();
 
       if (!target) {
@@ -230,33 +230,24 @@ export default {
           throw new Error(`Target returned HTTP ${response.status}`);
         }
 
-        let text = "";
+        const html = await response.text();
 
-        class TextCollector {
-          element(element) {
-            const tag = element.tagName.toLowerCase();
+        // Remove elements that normally do not contain useful readable content.
+        const cleaned = html
+          .replace(/<script[\s\S]*?<\/script>/gi, " ")
+          .replace(/<style[\s\S]*?<\/style>/gi, " ")
+          .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+          .replace(/<!--[\s\S]*?-->/g, " ");
 
-            if (
-              tag === "script" ||
-              tag === "style" ||
-              tag === "noscript"
-            ) {
-              element.removeAndPreserveContent();
-            }
-          }
-
-          text(textChunk) {
-            text += textChunk.text;
-          }
-        }
-
-        const rewriter = new HTMLRewriter();
-
-        rewriter.on("*", new TextCollector());
-
-        await rewriter.transform(response).arrayBuffer();
-
-        text = text
+        // Convert remaining HTML into plain text.
+        const text = cleaned
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&nbsp;/gi, " ")
+          .replace(/&amp;/gi, "&")
+          .replace(/&quot;/gi, '"')
+          .replace(/&#39;/gi, "'")
+          .replace(/&lt;/gi, "<")
+          .replace(/&gt;/gi, ">")
           .replace(/\s+/g, " ")
           .trim();
 
@@ -278,7 +269,6 @@ export default {
         );
       }
     }
-    
     return Response.json(
       {
         error: "Not found"
