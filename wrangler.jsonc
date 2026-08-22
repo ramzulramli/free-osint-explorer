@@ -1,5 +1,5 @@
 {
   "name": "free-osint-explorer",
-  "main": "src/index.js",
+  "main": "src/investigate.js",
   "compatibility_date": "2026-08-21"
 }
