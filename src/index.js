@@ -178,6 +178,10 @@ const COMMON_NON_PERSON_WORDS = new Set([
   "full", "name", "date", "place", "position", "height", "international"
 ]);
 
+const COMMON_NON_PERSON_PHRASES = new Set([
+  "penternak arnab"
+]);
+
 const COMMON_ORGANISATION_WORDS = new Set([
   "berhad", "bhd", "sdn", "sendirian", "foundation", "association", "university",
   "corporation", "company", "limited", "ltd", "fc", "f.c.", "fa", "f.a.",
@@ -199,13 +203,21 @@ function isLikelyPersonName(value) {
   if (words.length < 2 || words.length > 5) return false;
   if (cleaned.length < 5 || cleaned.length > 80) return false;
 
+  const normalizedValue = normalizeEntity(cleaned);
+
+  // Reject exact known non-person phrases before checking individual words.
+  // This is important for multi-word locations such as "Wakaf Bharu".
+  if (COMMON_NON_PERSON_PHRASES.has(normalizedValue)) return false;
+  if (MALAYSIAN_LOCATIONS.some(location => normalizeEntity(location) === normalizedValue)) {
+    return false;
+  }
+
   const lowerWords = words.map(word =>
     word.replace(/[^a-zA-ZÀ-ÿ'-]/g, "").toLowerCase()
   );
 
   if (lowerWords.some(word => COMMON_NON_PERSON_WORDS.has(word))) return false;
   if (lowerWords.some(word => COMMON_ORGANISATION_WORDS.has(word))) return false;
-  if (lowerWords.some(word => MALAYSIAN_LOCATIONS.some(location => normalizeEntity(location) === word))) return false;
 
   const properNameWords = words.filter(word =>
     /^[A-ZÀ-Ý][a-zà-ÿ'-]*$/.test(word)
@@ -251,7 +263,9 @@ function extractOrganisationCandidates(text) {
   const candidates = [];
   const seen = new Set();
 
-  const organisationRegex = /\b[A-ZÀ-Ý][A-Za-zÀ-ÿ&.'-]*(?:\s+[A-ZÀ-Ý][A-Za-zÀ-ÿ&.'-]*){0,6}\s+(?:Berhad|Bhd|Sdn Bhd|Foundation|Association|University|Corporation|Company|Limited|Ltd|FA|F\.A\.|FC|F\.C\.)\b/g;
+  // Keep organisation matches deliberately short. A broad greedy regex can
+  // swallow table headings such as "Goals Apps Goals Malaysia League FA".
+  const organisationRegex = /\b[A-ZÀ-Ý][A-Za-zÀ-ÿ&.'-]*(?:\s+[A-ZÀ-Ý][A-Za-zÀ-ÿ&.'-]*){0,2}\s+(?:Berhad|Bhd|Sdn Bhd|Foundation|Association|University|Corporation|Company|Limited|Ltd|FA|F\.A\.|FC|F\.C\.)\b/g;
   let match;
 
   while ((match = organisationRegex.exec(text)) !== null) {
