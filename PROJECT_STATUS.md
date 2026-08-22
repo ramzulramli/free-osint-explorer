@@ -62,7 +62,7 @@ Returns basic Worker status.
 
 Example:
 
-`/search?q=Alicia%20Amin`
+`/search?q=Ramzul%20Ramli`
 
 Current provider: DuckDuckGo HTML search.
 
@@ -74,8 +74,14 @@ Current behaviour:
 - Decodes DuckDuckGo redirect URLs.
 - Removes obvious advertisements.
 - Removes duplicate URLs.
+- Detects DuckDuckGo bot/challenge responses instead of silently reporting zero results.
+- Uses the DuckDuckGo Lite endpoint as a fallback when appropriate.
 
-Status: WORKING
+Important current limitation:
+
+- DuckDuckGo can return a bot/challenge response from Cloudflare Workers. This is now reported explicitly as a provider error rather than being misinterpreted as a genuine zero-result search.
+
+Status: WORKING WHEN PROVIDER ACCESS IS AVAILABLE / PROVIDER LIMITATION IDENTIFIED
 
 ---
 
@@ -123,11 +129,12 @@ Current entity extraction includes:
 - Dates
 - Years
 - Repeated keywords
+- Usernames
 - Normalization and deduplication
 - Basic confidence values
 - Initial false-positive filtering
 
-Real-world testing was performed on the Wikipedia page for Ramzul Zahini Adenan. The extraction is functional but still heuristic; some false positives remain, especially for organisation-like phrases and ambiguous names.
+Real-world testing was performed on the Wikipedia page for Ramzul Zahini Adenan. The extraction is functional but still heuristic; some false positives remain, especially for generic webpage/navigation text and ambiguous names.
 
 Status: WORKING / IMPROVEMENT ONGOING
 
@@ -139,12 +146,16 @@ Example:
 
 `/investigate?q=Ramzul%20Ramli`
 
+Controlled recursive example:
+
+`/investigate?q=Ramzul%20Ramli&depth=1`
+
 Current behaviour:
 
 1. Accepts a seed query.
-2. Executes the search workflow.
+2. Executes the search workflow through shared search functions.
 3. Collects up to 5 search results.
-4. Reads up to 5 result pages.
+4. Reads up to 5 result pages per investigation.
 5. Extracts up to 50 entities per source.
 6. Aggregates duplicate entities across sources.
 7. Counts distinct supporting sources.
@@ -152,6 +163,8 @@ Current behaviour:
 9. Separates useful discoveries from metadata such as years, dates and generic keywords.
 10. Reports failed sources instead of silently discarding them.
 11. Returns a controlled ranked discovery list.
+12. Can optionally process discovered queries at controlled recursion depth.
+13. Tracks visited queries, search requests, pages processed and remaining queue items.
 
 Discovery types currently eligible for follow-up investigation:
 
@@ -165,15 +178,26 @@ Discovery types currently eligible for follow-up investigation:
 
 Metadata such as years, dates and generic keywords is retained for context but is not treated as a recursive discovery target.
 
-Controlled limits:
+Current controlled recursion limits:
 
 - Maximum search results: 5
-- Maximum pages: 5
+- Maximum pages per investigation: 5
 - Maximum entities per source: 50
 - Maximum ranked entities: 50
 - Maximum discoveries: 25
+- Maximum recursion depth: 2
+- Maximum queue items: 10
+- Maximum search requests: 10
+- Maximum visited queries: 20
 
-Status: WORKING / DISCOVERY INTELLIGENCE INITIAL IMPLEMENTATION
+Important testing result:
+
+- `Ramzul Ramli` successfully returned 10 DuckDuckGo results, 5 processed results, 2 successful readable sources, and a clean discovery containing `@ramzul.ramli`.
+- Instagram and ZoomInfo may fail with HTTP 429/403; these failures are surfaced in the investigation response.
+- Subsequent tests for other queries returned zero results because DuckDuckGo began returning a bot/challenge response from the Worker.
+- The provider now explicitly reports `DuckDuckGo returned a bot/challenge response; search was not parsed` rather than treating that condition as zero search results.
+
+Status: WORKING PIPELINE / SEARCH PROVIDER LIMITATION BLOCKING RELIABLE REPEATABLE TESTING
 
 ---
 
@@ -181,11 +205,11 @@ Status: WORKING / DISCOVERY INTELLIGENCE INITIAL IMPLEMENTATION
 
 ```text
 Phase 0  Infrastructure         ██████████ COMPLETE
-Phase 1  Search                 ██████████ COMPLETE
+Phase 1  Search                 █████████░ COMPLETE WITH PROVIDER LIMITATION
 Phase 2  Web Reading            ██████████ COMPLETE (core)
 Phase 3  Entity Extraction      ████████░░ INITIAL IMPLEMENTATION
-Phase 4  Discovery Intelligence ██████░░░░ IN PROGRESS
-Phase 5  Recursive Crawler      ██░░░░░░░░ INITIAL WORKFLOW ONLY
+Phase 4  Discovery Intelligence ████████░░ INITIAL IMPLEMENTATION
+Phase 5  Recursive Crawler      ████░░░░░░ CONTROLLED INITIAL WORKFLOW
 Phase 6  Knowledge Graph        ░░░░░░░░░░ PLANNED
 Phase 7  Investigation UI       ░░░░░░░░░░ PLANNED
 Phase 8  Reporting              ░░░░░░░░░░ PLANNED
@@ -197,13 +221,17 @@ Phase 10 Optimization           ░░░░░░░░░░ FUTURE
 
 # Immediate Next Steps
 
-1. Test `/investigate` again using `Ramzul Ramli`.
-2. Test a public person with richer web coverage.
-3. Test an organisation seed.
-4. Inspect discovery quality and false positives.
-5. Add explicit discovery queue construction.
-6. Generate controlled follow-up searches from high-value discoveries.
-7. Add recursive investigation only after queueing and limits are stable.
-8. Later build relationships between entities for the knowledge graph.
+1. Add a provider abstraction that allows DuckDuckGo to remain available without making it a single point of failure.
+2. Evaluate a genuinely free SearXNG-based fallback that can be configured through a Worker environment variable rather than hard-coding a public instance.
+3. Test `/search` with the fallback provider before testing `/investigate` recursion again.
+4. Keep the existing controlled queue and limits unchanged while search reliability is fixed.
+5. Improve relevance/entity scoring after a reliable search provider is available.
+6. Continue with relationship extraction and knowledge-graph structures only after discovery quality is stable.
 
-The next major engineering focus remains **Discovery Intelligence**, followed by a controlled **Discovery Queue** and recursive investigation.
+The next major engineering focus is **Search Provider Abstraction + Free Fallback**, followed by refinement of **Discovery Intelligence** and controlled recursive investigation.
+
+---
+
+# Resume Note
+
+When development resumes, start with the search provider layer. Do not immediately modify the discovery queue. The queue currently has controlled limits and should be tested again only after a reliable search provider is available.
