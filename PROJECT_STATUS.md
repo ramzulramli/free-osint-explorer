@@ -1,6 +1,6 @@
 # Free OSINT Explorer — Project Status
 
-Last updated: 2026-08-22
+Last updated: 2026-08-23
 
 ## Project Goal
 
@@ -28,8 +28,7 @@ Primary requirement:
 - Free / RM0 where realistically possible.
 - No always-running server.
 - On-demand usage only.
-- User cannot install software on company laptop.
-- Cloud/browser-based development preferred.
+- Browser/cloud-based development preferred.
 
 ---
 
@@ -37,21 +36,15 @@ Primary requirement:
 
 ## GitHub
 
-Repository:
-
-`ramzulramli/free-osint-explorer`
+Repository: `ramzulramli/free-osint-explorer`
 
 GitHub is used for source code and Cloudflare deployment.
 
 ## Cloudflare
 
-Worker:
+Worker: `free-osint-explorer`
 
-`free-osint-explorer`
-
-Production URL:
-
-`https://free-osint-explorer.ramzul.workers.dev`
+Production URL: `https://free-osint-explorer.ramzul.workers.dev`
 
 Cloudflare automatically deploys changes from GitHub.
 
@@ -63,10 +56,6 @@ Cloudflare automatically deploys changes from GitHub.
 
 Returns basic Worker status.
 
-Example:
-
-`https://free-osint-explorer.ramzul.workers.dev/`
-
 ---
 
 ## `/search`
@@ -75,27 +64,18 @@ Example:
 
 `/search?q=Alicia%20Amin`
 
-Current provider:
-
-DuckDuckGo HTML search.
+Current provider: DuckDuckGo HTML search.
 
 Current behaviour:
 
-- Sends search query to DuckDuckGo HTML endpoint.
+- Sends search query to DuckDuckGo.
 - Parses search result blocks.
-- Extracts:
-  - title
-  - URL
-  - snippet
+- Extracts title, URL and snippet.
 - Decodes DuckDuckGo redirect URLs.
 - Removes obvious advertisements.
 - Removes duplicate URLs.
 
-Successfully tested with:
-
-- `liverpool`
-- `Alicia Amin`
-- `Alicia Amin tattoo`
+Status: WORKING
 
 ---
 
@@ -109,16 +89,9 @@ Current behaviour:
 
 - Accepts HTTP/HTTPS URLs.
 - Fetches public webpages.
-- Returns:
-  - URL
-  - HTTP status
-  - content type
-  - content length
-  - HTML preview.
+- Returns URL, HTTP status, content type, content length and an HTML preview.
 
-Successfully tested with:
-
-`https://example.com`
+Status: WORKING
 
 ---
 
@@ -138,28 +111,79 @@ Current behaviour:
 - Extracts hyperlinks.
 - Converts relative links into absolute URLs.
 - Removes duplicate links.
-- Returns up to 10,000 characters of readable text.
-- Returns up to 100 extracted links.
+- Limits readable text and extracted links.
+- Extracts initial entities from page text.
 
-Successfully tested with:
+Current entity extraction includes:
 
-`https://example.com`
+- Person candidates
+- Organisation candidates
+- Malaysian location candidates
+- URLs
+- Dates
+- Years
+- Repeated keywords
+- Normalization and deduplication
+- Basic confidence values
+- Initial false-positive filtering
 
-Successful output included:
+Real-world testing was performed on the Wikipedia page for Ramzul Zahini Adenan. The extraction is functional but still heuristic; some false positives remain, especially for organisation-like phrases and ambiguous names.
 
-```json
-{
-  "status": "success",
-  "url": "https://example.com/",
-  "httpStatus": 200,
-  "title": "Example Domain",
-  "textLength": 142,
-  "text": "Example Domain Example Domain This domain is for use in documentation examples without needing permission. Avoid use in operations. Learn more",
-  "linkCount": 1,
-  "links": [
-    {
-      "text": "Learn more",
-      "url": "https://iana.org/domains/example"
-    }
-  ]
-}
+Status: WORKING / IMPROVEMENT ONGOING
+
+---
+
+## `/investigate`
+
+Example:
+
+`/investigate?q=Ramzul%20Ramli`
+
+Current behaviour:
+
+1. Accepts a seed query.
+2. Executes the search workflow.
+3. Collects initial search results.
+4. Reads a controlled number of result pages.
+5. Extracts entities from each readable page.
+6. Aggregates discoveries.
+7. Applies basic duplicate prevention.
+8. Returns investigation data in a single response.
+
+This is the first orchestration layer of the project.
+
+It is currently a controlled initial investigation workflow, not yet a full recursive crawler. Relevance scoring, discovery queues, generated follow-up queries and multi-depth recursion are still pending.
+
+Status: WORKING / INITIAL IMPLEMENTATION
+
+---
+
+# Current Development Position
+
+```text
+Phase 0  Infrastructure        ██████████ COMPLETE
+Phase 1  Search                ██████████ COMPLETE
+Phase 2  Web Reading           ██████████ COMPLETE (core)
+Phase 3  Entity Extraction     ████████░░ INITIAL IMPLEMENTATION
+Phase 4  Discovery Intelligence ████░░░░░░ IN PROGRESS
+Phase 5  Recursive Crawler     ██░░░░░░░░ INITIAL WORKFLOW ONLY
+Phase 6  Knowledge Graph       ░░░░░░░░░░ PLANNED
+Phase 7  Investigation UI      ░░░░░░░░░░ PLANNED
+Phase 8  Reporting             ░░░░░░░░░░ PLANNED
+Phase 9  Advanced OSINT        ░░░░░░░░░░ FUTURE
+Phase 10 Optimization          ░░░░░░░░░░ FUTURE
+```
+
+---
+
+# Immediate Next Steps
+
+1. Test `/investigate` using several different seed types.
+2. Inspect source and entity aggregation quality.
+3. Add relevance scoring for entities and sources.
+4. Rank discoveries instead of treating all entities equally.
+5. Build a discovery queue with explicit execution limits.
+6. Generate controlled follow-up searches from high-value discoveries.
+7. Add recursive investigation only after queueing and limits are stable.
+
+The next major engineering focus is **Discovery Intelligence**, not UI or unrestricted crawling.
