@@ -20,14 +20,20 @@ const DISCOVERY_TYPES = new Set([
 
 const METADATA_TYPES = new Set(["date", "year", "keyword"]);
 
+// Page chrome frequently looks like a person's name after HTML is stripped.
+// Keep this list focused on obvious UI/platform fragments rather than trying
+// to maintain a universal name blacklist.
 const PERSON_NOISE_WORDS = new Set([
   "safety", "how", "home", "watch", "channel", "video", "videos", "official",
-  "music", "news", "search", "help", "about", "contact", "privacy", "policy"
+  "music", "news", "search", "help", "about", "contact", "privacy", "policy",
+  "facebook", "explore", "email", "password", "log", "messenger", "lite", "meta",
+  "pay", "store", "quest", "ban", "bahasa", "indonesia", "create", "account",
+  "settings", "login", "signup", "sign", "terms", "cookies", "download", "share"
 ]);
 
 const GENERIC_DISCOVERY_VALUES = new Set([
   "youtube", "facebook", "instagram", "twitter", "x", "linkedin", "tiktok",
-  "wikipedia", "google", "gmail"
+  "wikipedia", "google", "gmail", "meta", "facebook explore"
 ]);
 
 function normalize(value) {
@@ -51,7 +57,12 @@ function isUsefulPerson(entity, seedQuery) {
   const value = normalize(entity.value);
   if (!value || GENERIC_DISCOVERY_VALUES.has(value)) return false;
 
-  const words = value.split(/\s+/);
+  const words = value.split(/\s+/).filter(Boolean);
+
+  // Very long capitalised phrases are usually navigation/menu text rather
+  // than a person's name.
+  if (words.length > 4 || value.length > 60) return false;
+
   if (words.some(word => PERSON_NOISE_WORDS.has(word))) return false;
   if (isSeedComponent(value, seedQuery)) return false;
 
