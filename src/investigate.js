@@ -44,7 +44,6 @@ function isSeedComponent(value, seedQuery) {
   const candidateWords = normalize(value).split(/\s+/).filter(Boolean);
 
   if (!candidateWords.length || !seedWords.length) return false;
-
   return candidateWords.every(word => seedWords.includes(word));
 }
 
@@ -54,8 +53,6 @@ function isUsefulPerson(entity, seedQuery) {
 
   const words = value.split(/\s+/);
   if (words.some(word => PERSON_NOISE_WORDS.has(word))) return false;
-
-  // A candidate that is merely one component of the seed is not a new identity.
   if (isSeedComponent(value, seedQuery)) return false;
 
   return true;
@@ -65,14 +62,9 @@ function isUsefulDiscovery(entity, seedQuery) {
   const value = normalize(entity.value);
   if (!value || GENERIC_DISCOVERY_VALUES.has(value)) return false;
 
-  if (entity.type === "person_candidate") {
-    return isUsefulPerson(entity, seedQuery);
-  }
-
-  // Generic keywords, years and dates are metadata rather than discovery targets.
+  if (entity.type === "person_candidate") return isUsefulPerson(entity, seedQuery);
   if (METADATA_TYPES.has(entity.type)) return false;
 
-  // Don't recurse into a bare URL that is simply the source itself.
   if (entity.type === "url") {
     return Boolean(value.startsWith("http://") || value.startsWith("https://"));
   }
@@ -112,6 +104,9 @@ function scoreEntity(entity, sourceCount, seedQuery) {
 }
 
 async function callLegacy(request, path, params = {}) {
+  // Route through the deployed Worker URL instead of directly invoking the
+  // imported legacy module. This keeps /investigate on the exact same public
+  // /search and /entities execution path that we test independently.
   const url = new URL(request.url);
   url.pathname = path;
   url.search = "";
@@ -120,7 +115,12 @@ async function callLegacy(request, path, params = {}) {
     url.searchParams.set(key, value);
   }
 
-  return legacyWorker.fetch(new Request(url.toString(), request));
+  return fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      "User-Agent": "FreeOSINTExplorer/0.3.0"
+    }
+  });
 }
 
 async function investigate(request) {
@@ -145,7 +145,7 @@ async function investigate(request) {
     const searchData = await searchResponse.json();
 
     if (searchData.status !== "success") {
-      throw new Error(searchData.message || "Search failed");
+      throw new Error(searchData.message || `Search failed with HTTP ${searchResponse.status}`);
     }
 
     const searchResults = Array.isArray(searchData.results)
@@ -193,8 +193,6 @@ async function investigate(request) {
           const existing = entityMap.get(key);
 
           if (existing) {
-            // Count each source once even if the same extractor returned the
-            // same entity multiple times from one page.
             if (!existing.sources.some(sourceRef => sourceRef.url === source.url)) {
               existing.sourceCount += 1;
               existing.sources.push({
