@@ -172,7 +172,10 @@ const COMMON_NON_PERSON_WORDS = new Set([
   "total", "international", "statistics", "reference", "references", "external",
   "links", "privacy", "policy", "creative", "commons", "attribution", "conduct",
   "developers", "cookie", "toggle", "hidden", "categories", "malaysian", "men",
-  "forward", "striker", "senior", "junior", "personal", "years", "league"
+  "forward", "striker", "senior", "junior", "personal", "years", "league",
+  "head", "this", "use", "official", "wiki", "database", "monster", "team",
+  "league", "career", "season", "squad", "players", "current", "former", "born",
+  "full", "name", "date", "place", "position", "height", "international"
 ]);
 
 const COMMON_ORGANISATION_WORDS = new Set([
@@ -202,6 +205,7 @@ function isLikelyPersonName(value) {
 
   if (lowerWords.some(word => COMMON_NON_PERSON_WORDS.has(word))) return false;
   if (lowerWords.some(word => COMMON_ORGANISATION_WORDS.has(word))) return false;
+  if (lowerWords.some(word => MALAYSIAN_LOCATIONS.some(location => normalizeEntity(location) === word))) return false;
 
   const properNameWords = words.filter(word =>
     /^[A-ZÀ-Ý][a-zà-ÿ'-]*$/.test(word)
@@ -322,13 +326,16 @@ function extractEmails(text) {
 function extractPhoneNumbers(text) {
   const candidates = [];
   const seen = new Set();
-  const regex = /(?:\+?6?0?1[0-9][\s.-]?[0-9]{3,4}[\s.-]?[0-9]{3,4}|\+?60[\s.-]?[0-9]{1,2}[\s.-]?[0-9]{3,4}[\s.-]?[0-9]{3,4})/g;
+
+  // Malaysian phone numbers only. Requiring 01 or +60 prevents numeric IDs
+  // such as Wikipedia revision IDs from being classified as phone numbers.
+  const regex = /(?:\+?60[\s.-]?1[0-9][\s.-]?[0-9]{3,4}[\s.-]?[0-9]{3,4}|01[0-9][\s.-]?[0-9]{3,4}[\s.-]?[0-9]{3,4})/g;
   let match;
 
   while ((match = regex.exec(text)) !== null) {
     const value = match[0].trim();
     const digits = value.replace(/\D/g, "");
-    if (digits.length < 9 || digits.length > 12) continue;
+    if (digits.length < 10 || digits.length > 12) continue;
 
     const normalized = digits;
     if (seen.has(normalized)) continue;
@@ -339,7 +346,7 @@ function extractPhoneNumbers(text) {
       value,
       normalized,
       confidence: 0.90,
-      evidence: "Phone number pattern found in page text"
+      evidence: "Malaysian phone number pattern found in page text"
     });
   }
 
