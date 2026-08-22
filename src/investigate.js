@@ -104,9 +104,6 @@ function scoreEntity(entity, sourceCount, seedQuery) {
 }
 
 async function callLegacy(request, path, params = {}) {
-  // Route through the deployed Worker URL instead of directly invoking the
-  // imported legacy module. This keeps /investigate on the exact same public
-  // /search and /entities execution path that we test independently.
   const url = new URL(request.url);
   url.pathname = path;
   url.search = "";
@@ -115,12 +112,7 @@ async function callLegacy(request, path, params = {}) {
     url.searchParams.set(key, value);
   }
 
-  return fetch(url.toString(), {
-    method: "GET",
-    headers: {
-      "User-Agent": "FreeOSINTExplorer/0.3.0"
-    }
-  });
+  return legacyWorker.fetch(new Request(url.toString(), request));
 }
 
 async function investigate(request) {
