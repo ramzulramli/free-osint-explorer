@@ -14,7 +14,7 @@ Status: COMPLETE
 
 # Phase 1 — Search
 
-Status: COMPLETE
+Status: COMPLETE CORE / PROVIDER RESILIENCE IN PROGRESS
 
 - [x] `/search`
 - [x] DuckDuckGo provider
@@ -23,12 +23,15 @@ Status: COMPLETE
 - [x] Advertisement filtering
 - [x] Duplicate removal
 - [x] Search testing
-
-Future:
-
+- [x] Bot/challenge detection
+- [x] Explicit provider failure reporting
+- [x] DuckDuckGo fallback parsing attempt
 - [ ] Search provider abstraction
-- [ ] Additional providers if viable
+- [ ] Free secondary provider
+- [ ] Automatic provider fallback
 - [ ] Search result ranking
+
+Current blocker: DuckDuckGo can return bot/challenge responses from Cloudflare Workers. Do not treat this as a genuine zero-result search.
 
 ---
 
@@ -63,6 +66,7 @@ Status: COMPLETE (INITIAL IMPLEMENTATION)
 - [x] Date extraction
 - [x] Year extraction
 - [x] Keyword extraction
+- [x] Username extraction
 - [x] Entity normalization
 - [x] Entity deduplication
 - [x] Confidence scoring
@@ -72,7 +76,6 @@ Still to improve:
 
 - [ ] Better person/entity recognition
 - [ ] Better organisation filtering
-- [ ] Username extraction
 - [ ] Email extraction
 - [ ] Phone extraction with context validation
 - [ ] More language-aware extraction
@@ -81,7 +84,7 @@ Still to improve:
 
 # Phase 4 — Discovery Intelligence
 
-Status: IN PROGRESS
+Status: INITIAL IMPLEMENTATION COMPLETE / REFINEMENT IN PROGRESS
 
 - [x] `/investigate` endpoint
 - [x] Seed query support
@@ -90,33 +93,45 @@ Status: IN PROGRESS
 - [x] Entity aggregation
 - [x] Basic duplicate prevention
 - [x] Investigation response structure
-- [ ] Relevance scoring
+- [x] Initial relevance scoring
+- [x] Initial entity ranking
+- [x] Metadata separation
+- [x] Useful discovery filtering
+- [x] Discovery queue
+- [x] Queue deduplication
+- [x] Investigation limits and budgeting
+- [x] Configurable recursion depth
+- [ ] Better relevance scoring
 - [ ] Entity confidence refinement
 - [ ] Source confidence
 - [ ] Related keyword generation
-- [ ] Search query generation
-- [ ] Discovery queue
+- [ ] Better search query generation
 - [ ] Priority queue
-- [ ] Investigation limits and budgeting
 
 ---
 
 # Phase 5 — Recursive Crawler
 
-Status: PLANNED
+Status: CONTROLLED INITIAL WORKFLOW
 
-- [ ] Seed investigation
+- [x] Seed investigation
 - [x] Initial investigation workflow
-- [ ] Depth 0
-- [ ] Depth 1
-- [ ] Depth 2
-- [ ] Maximum depth
-- [ ] Maximum pages
-- [ ] Maximum searches
-- [ ] Maximum entities
-- [ ] Execution limits
-- [ ] Relevance threshold
+- [x] Depth 0
+- [x] Depth 1 workflow support
+- [x] Depth 2 maximum
+- [x] Maximum depth
+- [x] Maximum pages
+- [x] Maximum searches
+- [x] Maximum entities
+- [x] Execution limits
+- [x] Visited-query tracking
+- [x] Queue-size limit
+- [ ] Relevance threshold refinement
 - [ ] Domain controls
+- [ ] Search-provider fallback
+- [ ] Robust multi-provider recursion
+
+Important: recursive investigation should not be expanded further until search-provider reliability is solved.
 
 ---
 
@@ -213,14 +228,16 @@ Status: FUTURE
 
 The immediate development order is:
 
-1. Test `/investigate` with multiple seeds and real-world pages.
-2. Improve relevance scoring and entity ranking.
-3. Build the discovery queue.
-4. Add controlled recursive investigation.
-5. Build relationship extraction.
-6. Build graph data structures.
-7. Build the UI.
-8. Build reporting/PDF.
+1. Add search-provider abstraction.
+2. Evaluate a free SearXNG-based fallback using a configurable Worker environment variable.
+3. Test the fallback through `/search`.
+4. Re-test `/investigate` with several seed types.
+5. Refine relevance/entity scoring.
+6. Strengthen controlled recursive investigation.
+7. Build relationship extraction.
+8. Build graph data structures.
+9. Build the UI.
+10. Build reporting/PDF.
 
 Do not jump directly to unrestricted crawling.
 
