@@ -143,47 +143,67 @@ Current behaviour:
 
 1. Accepts a seed query.
 2. Executes the search workflow.
-3. Collects initial search results.
-4. Reads a controlled number of result pages.
-5. Extracts entities from each readable page.
-6. Aggregates discoveries.
-7. Applies basic duplicate prevention.
-8. Returns investigation data in a single response.
+3. Collects up to 5 search results.
+4. Reads up to 5 result pages.
+5. Extracts up to 50 entities per source.
+6. Aggregates duplicate entities across sources.
+7. Counts distinct supporting sources.
+8. Calculates initial relevance scores.
+9. Separates useful discoveries from metadata such as years, dates and generic keywords.
+10. Reports failed sources instead of silently discarding them.
+11. Returns a controlled ranked discovery list.
 
-This is the first orchestration layer of the project.
+Discovery types currently eligible for follow-up investigation:
 
-It is currently a controlled initial investigation workflow, not yet a full recursive crawler. Relevance scoring, discovery queues, generated follow-up queries and multi-depth recursion are still pending.
+- Person candidates
+- Organisation candidates
+- Location candidates
+- Email addresses
+- Phone numbers
+- Usernames
+- URLs
 
-Status: WORKING / INITIAL IMPLEMENTATION
+Metadata such as years, dates and generic keywords is retained for context but is not treated as a recursive discovery target.
+
+Controlled limits:
+
+- Maximum search results: 5
+- Maximum pages: 5
+- Maximum entities per source: 50
+- Maximum ranked entities: 50
+- Maximum discoveries: 25
+
+Status: WORKING / DISCOVERY INTELLIGENCE INITIAL IMPLEMENTATION
 
 ---
 
 # Current Development Position
 
 ```text
-Phase 0  Infrastructure        ██████████ COMPLETE
-Phase 1  Search                ██████████ COMPLETE
-Phase 2  Web Reading           ██████████ COMPLETE (core)
-Phase 3  Entity Extraction     ████████░░ INITIAL IMPLEMENTATION
-Phase 4  Discovery Intelligence ████░░░░░░ IN PROGRESS
-Phase 5  Recursive Crawler     ██░░░░░░░░ INITIAL WORKFLOW ONLY
-Phase 6  Knowledge Graph       ░░░░░░░░░░ PLANNED
-Phase 7  Investigation UI      ░░░░░░░░░░ PLANNED
-Phase 8  Reporting             ░░░░░░░░░░ PLANNED
-Phase 9  Advanced OSINT        ░░░░░░░░░░ FUTURE
-Phase 10 Optimization          ░░░░░░░░░░ FUTURE
+Phase 0  Infrastructure         ██████████ COMPLETE
+Phase 1  Search                 ██████████ COMPLETE
+Phase 2  Web Reading            ██████████ COMPLETE (core)
+Phase 3  Entity Extraction      ████████░░ INITIAL IMPLEMENTATION
+Phase 4  Discovery Intelligence ██████░░░░ IN PROGRESS
+Phase 5  Recursive Crawler      ██░░░░░░░░ INITIAL WORKFLOW ONLY
+Phase 6  Knowledge Graph        ░░░░░░░░░░ PLANNED
+Phase 7  Investigation UI       ░░░░░░░░░░ PLANNED
+Phase 8  Reporting              ░░░░░░░░░░ PLANNED
+Phase 9  Advanced OSINT         ░░░░░░░░░░ FUTURE
+Phase 10 Optimization           ░░░░░░░░░░ FUTURE
 ```
 
 ---
 
 # Immediate Next Steps
 
-1. Test `/investigate` using several different seed types.
-2. Inspect source and entity aggregation quality.
-3. Add relevance scoring for entities and sources.
-4. Rank discoveries instead of treating all entities equally.
-5. Build a discovery queue with explicit execution limits.
+1. Test `/investigate` again using `Ramzul Ramli`.
+2. Test a public person with richer web coverage.
+3. Test an organisation seed.
+4. Inspect discovery quality and false positives.
+5. Add explicit discovery queue construction.
 6. Generate controlled follow-up searches from high-value discoveries.
 7. Add recursive investigation only after queueing and limits are stable.
+8. Later build relationships between entities for the knowledge graph.
 
-The next major engineering focus is **Discovery Intelligence**, not UI or unrestricted crawling.
+The next major engineering focus remains **Discovery Intelligence**, followed by a controlled **Discovery Queue** and recursive investigation.
