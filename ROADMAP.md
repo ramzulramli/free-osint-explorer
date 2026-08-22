@@ -1,11 +1,3 @@
-
----
-
-### 2. `ROADMAP.md`
-
-This is the **master development plan**.
-
-```markdown
 # Free OSINT Explorer — Roadmap
 
 ## Phase 0 — Infrastructure
@@ -42,7 +34,7 @@ Future:
 
 # Phase 2 — Web Reading
 
-Status: MOSTLY COMPLETE
+Status: COMPLETE
 
 - [x] `/fetch`
 - [x] `/read`
@@ -52,12 +44,9 @@ Status: MOSTLY COMPLETE
 - [x] Link extraction
 - [x] Relative URL normalization
 - [x] Duplicate link removal
-
-Next:
-
-- [ ] Test real news/article pages
+- [x] Real-world page testing
+- [x] Metadata extraction groundwork
 - [ ] Improve article extraction
-- [ ] Extract metadata
 - [ ] Detect page type
 - [ ] Handle PDFs
 
@@ -65,34 +54,50 @@ Next:
 
 # Phase 3 — Entity Extraction
 
-Status: NEXT
+Status: COMPLETE (INITIAL IMPLEMENTATION)
 
-- [ ] Person extraction
-- [ ] Organisation extraction
-- [ ] Location extraction
+- [x] Person candidate extraction
+- [x] Organisation candidate extraction
+- [x] Location extraction
+- [x] URL extraction
+- [x] Date extraction
+- [x] Year extraction
+- [x] Keyword extraction
+- [x] Entity normalization
+- [x] Entity deduplication
+- [x] Confidence scoring
+- [x] False-positive filtering improvements
+
+Still to improve:
+
+- [ ] Better person/entity recognition
+- [ ] Better organisation filtering
 - [ ] Username extraction
-- [ ] Website extraction
 - [ ] Email extraction
-- [ ] Phone extraction
-- [ ] Date extraction
-- [ ] Keyword extraction
-- [ ] Entity normalization
-- [ ] Entity deduplication
+- [ ] Phone extraction with context validation
+- [ ] More language-aware extraction
 
 ---
 
 # Phase 4 — Discovery Intelligence
 
-Status: PLANNED
+Status: IN PROGRESS
 
+- [x] `/investigate` endpoint
+- [x] Seed query support
+- [x] Search result collection
+- [x] Controlled initial page reading
+- [x] Entity aggregation
+- [x] Basic duplicate prevention
+- [x] Investigation response structure
 - [ ] Relevance scoring
-- [ ] Entity confidence
+- [ ] Entity confidence refinement
 - [ ] Source confidence
 - [ ] Related keyword generation
 - [ ] Search query generation
 - [ ] Discovery queue
 - [ ] Priority queue
-- [ ] Duplicate investigation prevention
+- [ ] Investigation limits and budgeting
 
 ---
 
@@ -101,6 +106,7 @@ Status: PLANNED
 Status: PLANNED
 
 - [ ] Seed investigation
+- [x] Initial investigation workflow
 - [ ] Depth 0
 - [ ] Depth 1
 - [ ] Depth 2
@@ -207,17 +213,15 @@ Status: FUTURE
 
 The immediate development order is:
 
-1. Test `/read` on a real article.
-2. Improve `/read` if required.
-3. Build entity extraction.
-4. Build entity normalization.
-5. Build relevance scoring.
-6. Build discovery queue.
-7. Build recursive investigation.
-8. Build graph.
-9. Build UI.
-10. Build reporting/PDF.
+1. Test `/investigate` with multiple seeds and real-world pages.
+2. Improve relevance scoring and entity ranking.
+3. Build the discovery queue.
+4. Add controlled recursive investigation.
+5. Build relationship extraction.
+6. Build graph data structures.
+7. Build the UI.
+8. Build reporting/PDF.
 
-Do not jump directly to the full crawler.
+Do not jump directly to unrestricted crawling.
 
 Each stage must be tested before moving to the next stage.
