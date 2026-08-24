@@ -28,18 +28,24 @@ Current behaviour:
 - DuckDuckGo bot/challenge responses are explicitly detected.
 - SearXNG is used as fallback.
 - SearXNG results are normalized to `{title,url,snippet}`.
+- Search results are scored against the query before being returned.
+- Weak results with no query-term evidence are filtered out.
+- Compound-name partial matches are deliberately scored lower than exact name matches.
 - SearXNG fallback is bounded to a primary + one optional fallback instance to avoid Cloudflare Worker subrequest exhaustion.
 - Provider and attempted-provider information is returned.
 
 Testing:
 - DuckDuckGo is currently unreliable from the Worker because of bot/challenge responses.
 - SearXNG fallback works.
-- `https://search.mectov.my.id` successfully returned relevant `Ramzul Ramli` results in one test.
-- The same public instance later returned completely irrelevant Microsoft/Windows/Outlook results for the same query.
+- `Ramzul Ramli` returns relevant Facebook, Instagram, YouTube and other matching results, plus the full-name LinkedIn result for `Ramzul Mazwan Ramli`.
+- `Ramzul Mazwan Ramli` returns the full-name LinkedIn, Shutterstock and MSTB results.
+- `Ramzulhakim Ramli` returns results belonging to the separate known person.
+- `Ramzulhakim Ramli` is retained as a lower-relevance `compound_name_partial` candidate when it appears in a broader `Ramzul Ramli` search; it is not treated as the same identity.
+- A generic `Microsoft Windows` query returns Windows-related results.
 
-Therefore **HTTP 200 + valid SearXNG JSON is not sufficient**. Search-quality/relevance validation is now the immediate blocker.
+The earlier failure mode where a valid SearXNG response contained unrelated Microsoft/AppLocker pages is now addressed at the `/search` result-ranking/filtering layer.
 
-Status: **PROVIDER FALLBACK WORKING / SEARCH QUALITY BLOCKER**
+Status: **SEARCH PROVIDER + INITIAL RELEVANCE VALIDATION WORKING**
 
 ### `/fetch`
 
@@ -77,9 +83,9 @@ Current limits:
 - Search requests: 5
 - Visited queries: 10
 
-Testing exposed a downstream problem: when SearXNG returned Microsoft/AppLocker pages for `Ramzul Ramli`, the investigator extracted generic terms such as `control`, `windows`, and `policy`. Therefore **do not expand recursion until `/search` quality is stable**.
+Earlier `/investigate` testing showed that unrelated search results could contaminate entity extraction. Direct `/search` relevance filtering is now in place, so the next step is to retest `/investigate` using the identity-resolution golden tests before increasing recursion budgets.
 
-Status: **CONTROLLED WORKFLOW WORKING / BLOCKED BY SEARCH QUALITY**
+Status: **CONTROLLED WORKFLOW READY FOR RETEST**
 
 ## Identity-resolution golden test
 
@@ -94,11 +100,11 @@ The engine must never merge people solely because names are similar. Search rele
 
 ```text
 Phase 0  Infrastructure         COMPLETE
-Phase 1  Search                 PROVIDER FALLBACK WORKING / QUALITY BLOCKER
+Phase 1  Search                 INITIAL RELEVANCE VALIDATION WORKING
 Phase 2  Web Reading            COMPLETE (core)
 Phase 3  Entity Extraction      INITIAL IMPLEMENTATION
-Phase 4  Discovery Intelligence INITIAL IMPLEMENTATION
-Phase 5  Recursive Crawler      CONTROLLED INITIAL WORKFLOW
+Phase 4  Discovery Intelligence INITIAL IMPLEMENTATION / RETEST READY
+Phase 5  Recursive Crawler      CONTROLLED INITIAL WORKFLOW / RETEST READY
 Phase 6  Knowledge Graph        PLANNED
 Phase 7  Investigation UI       PLANNED
 Phase 8  Reporting              PLANNED
@@ -108,13 +114,16 @@ Phase 10 Optimization           FUTURE
 
 ## Immediate Next Steps
 
-1. Update `src/search.js` with result-quality/relevance validation.
-2. Treat HTTP success as insufficient when results are obviously unrelated to the query.
-3. Keep SearXNG attempts bounded to protect Worker subrequest limits.
-4. Test `/search` directly with `Ramzul Ramli` and generic seeds.
-5. Only after direct search is reliable, retest `/investigate` recursion.
-6. Then improve entity scoring and identity resolution.
+1. Deploy the latest GitHub code to the Cloudflare Worker.
+2. Retest `/investigate` with `Ramzul Ramli`.
+3. Retest `/investigate` with `Ramzul Mazwan Ramli`.
+4. Retest `/investigate` with `Ramzulhakim Ramli` as the separate-person control case.
+5. Confirm unrelated generic entities such as `control`, `windows` and `policy` no longer dominate an investigation caused by contaminated search results.
+6. Refine entity scoring and identity resolution only after the investigation tests pass.
+7. Then strengthen controlled recursion.
+
+Do not increase crawl budgets yet.
 
 ## Resume Note
 
-**Next engineering task: `src/search.js` search-result quality/relevance validation. Do not modify the discovery queue or increase recursion budgets until direct `/search` quality is stable.**
+**Next engineering task: deploy current code and run the `/investigate` golden tests.**
