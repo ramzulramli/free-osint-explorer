@@ -74,6 +74,28 @@ async function fetchEntities(url) {
   return { title, url: targetUrl.toString(), httpStatus: response.status, textLength: text.length, entities };
 }
 
+function addEntityToMap(entityMap, entity, source) {
+  if (!entity?.type || !entity?.normalized) return;
+  const key = `${entity.type}:${normalize(entity.normalized)}`;
+  const existing = entityMap.get(key);
+  if (existing) {
+    if (!existing.sources.some(sourceRef => sourceRef.url === source.url)) {
+      existing.sourceCount += 1;
+      existing.sources.push({ title: source.title, url: source.url });
+    }
+    existing.confidence = Math.max(existing.confidence, Number(entity.confidence || 0));
+    return;
+  }
+  entityMap.set(key, {
+    type: entity.type,
+    value: entity.value,
+    normalized: entity.normalized,
+    confidence: Number(entity.confidence || 0),
+    sourceCount: 1,
+    sources: [{ title: source.title, url: source.url }]
+  });
+}
+
 async function investigateQuery(query, depth, state, env, requestedProvider) {
   const normalizedQuery = normalize(query);
   if (!normalizedQuery || state.visitedQueries.has(normalizedQuery)) return null;
@@ -89,6 +111,20 @@ async function investigateQuery(query, depth, state, env, requestedProvider) {
   const entityMap = new Map();
 
   for (const result of searchResults.slice(0, LIMITS.maxPages)) {
+    const resultSource = { title: result.title || "Search result", url: result.url };
+
+    // Search-result titles/snippets are evidence too. This is important when the
+    // target page is blocked, JS-only, or contains little readable text. It also
+    // lets recursive investigation discover related people/entities directly from
+    // the search engine's index rather than only from fetched page bodies.
+    const resultText = `${result.title || ""}. ${result.snippet || ""}`.trim();
+    if (resultText) {
+      const resultEntities = extractEntityCandidates(resultText);
+      for (const entity of resultEntities.slice(0, LIMITS.maxEntitiesPerSource)) {
+        addEntityToMap(entityMap, entity, resultSource);
+      }
+    }
+
     if (state.pagesProcessed >= LIMITS.maxPages * LIMITS.maxSearchRequests) break;
     state.pagesProcessed += 1;
     try {
@@ -98,18 +134,7 @@ async function investigateQuery(query, depth, state, env, requestedProvider) {
       state.sourcesSeen.add(result.url);
 
       for (const entity of entityData.entities.slice(0, LIMITS.maxEntitiesPerSource)) {
-        if (!entity?.type || !entity?.normalized) continue;
-        const key = `${entity.type}:${normalize(entity.normalized)}`;
-        const existing = entityMap.get(key);
-        if (existing) {
-          if (!existing.sources.some(sourceRef => sourceRef.url === source.url)) {
-            existing.sourceCount += 1;
-            existing.sources.push({ title: source.title, url: source.url });
-          }
-          existing.confidence = Math.max(existing.confidence, Number(entity.confidence || 0));
-        } else {
-          entityMap.set(key, { type: entity.type, value: entity.value, normalized: entity.normalized, confidence: Number(entity.confidence || 0), sourceCount: 1, sources: [{ title: source.title, url: source.url }] });
-        }
+        addEntityToMap(entityMap, entity, source);
       }
     } catch (error) {
       failedSources.push({ title: result.title || "", url: result.url, reason: error.message || "Unknown source error" });
