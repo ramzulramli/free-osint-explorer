@@ -1,19 +1,16 @@
 # Free OSINT Explorer — Architecture
 
-## 1. Overview
+Last updated: 2026-08-25
 
-Free OSINT Explorer is an on-demand web investigation system. A seed can be a person, organisation, company, website, username, location, topic or keyword.
+## Current Architecture Status
 
-The system searches public sources, reads webpages, extracts entities, scores discoveries and progressively investigates relevant discoveries under explicit resource limits.
+The project uses a shared search-provider abstraction behind `/search` and `/investigate`. DuckDuckGo is attempted first in `auto` mode, with bounded SearXNG fallback. Search results are normalized before downstream processing.
 
-Design goals:
-- RM0/free where realistically possible
-- On-demand execution
-- No always-running server
-- Cloudflare Workers
-- GitHub-based deployment
+A key finding from testing is that **HTTP 200 + valid JSON does not prove search quality**. The same public SearXNG instance successfully returned relevant `Ramzul Ramli` results in one test, then returned unrelated Microsoft/Windows/Outlook results for the same query. This makes result-quality validation the current architectural priority.
 
-## 2. Current API Flow
+Five sequential public SearXNG instance requests also exhausted the Cloudflare Worker subrequest budget. SearXNG probing is therefore intentionally bounded to a primary instance plus at most one fallback.
+
+## API Flow
 
 ```text
 USER / CLIENT
@@ -36,6 +33,9 @@ abstraction    │       │
 Normalized search results
  │
  ▼
+Search-result quality / relevance validation
+ │
+ ▼
 Entity extraction
  │
  ▼
@@ -48,9 +48,7 @@ Controlled queue
 Bounded recursion
 ```
 
-## 3. Search Provider Architecture
-
-`/search` and `/investigate` use the same provider abstraction.
+## Search Provider Architecture
 
 ```text
                  Search request
@@ -62,7 +60,8 @@ Bounded recursion
               ▼                 ▼
         DuckDuckGo          SearXNG
               │                 │
-              │          primary + one fallback
+       bot/challenge      primary + one fallback
+              │                 │
               └────────┬────────┘
                        ▼
               normalized results
@@ -78,11 +77,11 @@ Bounded recursion
           return            bounded fallback
 ```
 
-Important design rule: **HTTP 200 and valid JSON do not prove that a search response is useful.** A public SearXNG instance has already returned completely unrelated Microsoft/Windows/Outlook results for `Ramzul Ramli`. The search layer therefore needs result-quality validation before downstream crawling consumes the results.
+Provider success is two-stage: transport/parser success followed by search-quality success.
 
-Another design rule: SearXNG probing must remain bounded. Five sequential public-instance requests exhausted the Cloudflare Worker subrequest budget. The implementation was changed to a primary instance plus at most one fallback.
+DuckDuckGo currently often produces a bot/challenge response from the Worker. SearXNG fallback works, but public instances are not guaranteed to return relevant results.
 
-## 4. Web Reading Engine
+## Web Reading Engine
 
 Endpoints: `/fetch`, `/read`.
 
@@ -94,7 +93,7 @@ Responsibilities:
 - Extract and normalize links.
 - Limit output to protect Worker execution.
 
-## 5. Entity Extraction
+## Entity Extraction
 
 Initial types:
 - Person candidates
@@ -110,23 +109,24 @@ Processing includes normalization, deduplication, basic confidence and false-pos
 
 Search-result titles/snippets can also provide evidence when a target page cannot be fetched.
 
-This remains heuristic extraction, not full NLP/NER.
+This remains heuristic extraction, not full NLP/NER. Generic words from unrelated pages must not become strong discoveries merely because they occur repeatedly. Search-quality validation must therefore precede downstream entity extraction.
 
-## 6. Investigation Orchestrator
+## Investigation Orchestrator
 
 Endpoint: `/investigate`.
 
 Responsibilities:
 1. Accept a seed.
 2. Search through the shared provider abstraction.
-3. Collect a bounded result set.
-4. Read selected pages.
-5. Extract page and search-result entities.
-6. Aggregate and score discoveries.
-7. Filter metadata/noise.
-8. Queue eligible discoveries when recursion is requested.
-9. Prevent duplicate query processing.
-10. Track budgets and execution history.
+3. Validate result-set quality.
+4. Collect a bounded result set.
+5. Read selected pages.
+6. Extract page and search-result entities.
+7. Aggregate and score discoveries.
+8. Filter metadata/noise.
+9. Queue eligible discoveries when recursion is requested.
+10. Prevent duplicate query processing.
+11. Track budgets and execution history.
 
 Current limits:
 - `maxSearchResults = 5`
@@ -141,7 +141,7 @@ Current limits:
 
 Do not increase these budgets while search quality is unstable.
 
-## 7. Identity Resolution Principle
+## Identity Resolution Principle
 
 Search relevance and identity resolution are separate layers.
 
@@ -155,7 +155,9 @@ Ramzulhakim Ramli        = different person
 
 A similar name can be retained as a candidate discovery, but the system must not merge people solely on name similarity. Identity requires corroborating evidence such as usernames, profiles, locations, organisations, links, dates or other independent signals.
 
-## 8. Target Architecture
+The `Ramzul Ramli` test is specifically intended to expose this distinction.
+
+## Target Architecture
 
 ```text
 USER
@@ -173,11 +175,11 @@ Investigation Engine
  │      ├── DuckDuckGo
  │      └── SearXNG
  │
+ ├── Search Result Quality / Relevance Engine
+ │
  ├── Fetch / Read
  │
  ├── Entity Extraction
- │
- ├── Search Result Quality / Relevance Engine
  │
  ├── Identity Resolution
  │
@@ -194,11 +196,7 @@ Investigation Engine
           └── Relationships
 ```
 
-## 9. Execution Model
-
-Every investigation is explicitly bounded by search-result, page, entity, recursion, queue, request and visited-query limits. The system prioritizes high-value discoveries instead of recursively processing everything.
-
-## 10. Current Investigation Flow
+## Current Investigation Flow
 
 ```text
 Seed
@@ -235,10 +233,27 @@ Result quality / relevance
    Queue + bounded recursion
 ```
 
-## 11. Immediate Architectural Step
+## Test Findings
+
+Recent testing established three important behaviours:
+
+1. **Fallback works.** When DuckDuckGo returned a bot/challenge response, the system successfully moved to SearXNG.
+2. **Subrequest exhaustion is a real constraint.** Probing too many public SearXNG instances caused Cloudflare to reject the invocation, so provider probing must remain bounded.
+3. **Search relevance is now the main blocker.** A successful SearXNG response for `Ramzul Ramli` later returned Microsoft/Windows/AppLocker pages. Feeding those pages into `/investigate` produced generic entities such as `control`, `windows` and `policy`. Search quality must therefore be validated before crawling.
+
+## Immediate Architectural Step
 
 The immediate engineering task is **search-result quality/relevance validation in `src/search.js`**.
 
-The goal is to reject obviously unrelated result sets while preserving useful partial-name/alias matches. For example, a search for `Ramzul Ramli` should allow `Ramzul Mazwan Ramli` as a potentially relevant result, but must not automatically equate `Ramzulhakim Ramli` with the same person.
+The quality layer should:
+- Compare the query against result titles and snippets.
+- Recognize useful aliases and partial-name matches.
+- Penalize result sets dominated by unrelated terms/domains.
+- Reject obviously contaminated result sets.
+- Trigger bounded SearXNG fallback when appropriate.
+- Preserve useful results even when some individual results are weak.
+- Avoid turning generic webpage/navigation terms into investigation discoveries.
+
+For the golden test case, a search for `Ramzul Ramli` may legitimately return `Ramzul Mazwan Ramli`, but `Ramzulhakim Ramli` must not automatically be merged into the same identity.
 
 Only after direct `/search` quality is stable should deeper recursive investigation, identity resolution and relationship extraction be expanded.
