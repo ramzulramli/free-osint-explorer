@@ -14,7 +14,7 @@ Status: COMPLETE
 
 # Phase 1 — Search
 
-Status: COMPLETE CORE / PROVIDER RESILIENCE IN PROGRESS
+Status: PROVIDER ABSTRACTION IMPLEMENTED / FALLBACK CONFIGURATION PENDING
 
 - [x] `/search`
 - [x] DuckDuckGo provider
@@ -26,12 +26,14 @@ Status: COMPLETE CORE / PROVIDER RESILIENCE IN PROGRESS
 - [x] Bot/challenge detection
 - [x] Explicit provider failure reporting
 - [x] DuckDuckGo fallback parsing attempt
-- [ ] Search provider abstraction
-- [ ] Free secondary provider
-- [ ] Automatic provider fallback
+- [x] Search provider abstraction
+- [x] SearXNG provider integration
+- [x] Automatic DuckDuckGo → SearXNG fallback
+- [x] Configurable provider selection
+- [ ] Configure and validate a live SearXNG instance
 - [ ] Search result ranking
 
-Current blocker: DuckDuckGo can return bot/challenge responses from Cloudflare Workers. Do not treat this as a genuine zero-result search.
+Current blocker: DuckDuckGo can return bot/challenge responses from Cloudflare Workers. The code now falls back to a configured SearXNG endpoint when available. SearXNG JSON output must be enabled by the selected instance.
 
 ---
 
@@ -126,12 +128,12 @@ Status: CONTROLLED INITIAL WORKFLOW
 - [x] Execution limits
 - [x] Visited-query tracking
 - [x] Queue-size limit
+- [x] Search-provider fallback integration
 - [ ] Relevance threshold refinement
 - [ ] Domain controls
-- [ ] Search-provider fallback
-- [ ] Robust multi-provider recursion
+- [ ] Robust multi-provider recursion testing
 
-Important: recursive investigation should not be expanded further until search-provider reliability is solved.
+Important: recursive investigation remains bounded. Do not expand the crawl budget until multi-provider search has been validated.
 
 ---
 
@@ -228,9 +230,9 @@ Status: FUTURE
 
 The immediate development order is:
 
-1. Add search-provider abstraction.
-2. Evaluate a free SearXNG-based fallback using a configurable Worker environment variable.
-3. Test the fallback through `/search`.
+1. Configure and validate a live SearXNG endpoint.
+2. Test `/search?provider=searxng`.
+3. Test `/search` automatic DuckDuckGo → SearXNG fallback.
 4. Re-test `/investigate` with several seed types.
 5. Refine relevance/entity scoring.
 6. Strengthen controlled recursive investigation.
