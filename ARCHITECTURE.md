@@ -6,9 +6,9 @@ Last updated: 2026-08-25
 
 The project uses a shared search-provider abstraction behind `/search` and `/investigate`. DuckDuckGo is attempted first in `auto` mode, with bounded SearXNG fallback. Search results are normalized before downstream processing.
 
-A key finding from testing is that **HTTP 200 + valid JSON does not prove search quality**. The same public SearXNG instance successfully returned relevant `Ramzul Ramli` results in one test, then returned unrelated Microsoft/Windows/Outlook results for the same query. This makes result-quality validation the current architectural priority.
+A key finding from testing was that **HTTP 200 + valid JSON does not prove search quality**. A public SearXNG instance previously returned unrelated Microsoft/Windows/AppLocker pages for `Ramzul Ramli`. The search layer now scores results against the query and filters results with no query-term evidence.
 
-Five sequential public SearXNG instance requests also exhausted the Cloudflare Worker subrequest budget. SearXNG probing is therefore intentionally bounded to a primary instance plus at most one fallback.
+Five sequential public SearXNG instance requests exhausted the Cloudflare Worker subrequest budget. SearXNG probing is therefore intentionally bounded to a primary instance plus at most one fallback.
 
 ## API Flow
 
@@ -81,6 +81,8 @@ Provider success is two-stage: transport/parser success followed by search-quali
 
 DuckDuckGo currently often produces a bot/challenge response from the Worker. SearXNG fallback works, but public instances are not guaranteed to return relevant results.
 
+The current relevance layer scores exact phrases, all terms in titles, split title/snippet matches and weaker partial matches. For name-like queries it deliberately reduces the score of compound first-name matches such as `Ramzulhakim` when the query is `Ramzul Ramli`.
+
 ## Web Reading Engine
 
 Endpoints: `/fetch`, `/read`.
@@ -109,7 +111,7 @@ Processing includes normalization, deduplication, basic confidence and false-pos
 
 Search-result titles/snippets can also provide evidence when a target page cannot be fetched.
 
-This remains heuristic extraction, not full NLP/NER. Generic words from unrelated pages must not become strong discoveries merely because they occur repeatedly. Search-quality validation must therefore precede downstream entity extraction.
+This remains heuristic extraction, not full NLP/NER. Generic words from unrelated pages must not become strong discoveries merely because they occur repeatedly. Search-quality validation now precedes downstream entity extraction.
 
 ## Investigation Orchestrator
 
@@ -139,7 +141,7 @@ Current limits:
 - `maxSearchRequests = 5`
 - `maxVisitedQueries = 10`
 
-Do not increase these budgets while search quality is unstable.
+Do not increase these budgets until the investigation golden tests pass.
 
 ## Identity Resolution Principle
 
@@ -235,25 +237,22 @@ Result quality / relevance
 
 ## Test Findings
 
-Recent testing established three important behaviours:
+Recent testing established four important behaviours:
 
 1. **Fallback works.** When DuckDuckGo returned a bot/challenge response, the system successfully moved to SearXNG.
 2. **Subrequest exhaustion is a real constraint.** Probing too many public SearXNG instances caused Cloudflare to reject the invocation, so provider probing must remain bounded.
-3. **Search relevance is now the main blocker.** A successful SearXNG response for `Ramzul Ramli` later returned Microsoft/Windows/AppLocker pages. Feeding those pages into `/investigate` produced generic entities such as `control`, `windows` and `policy`. Search quality must therefore be validated before crawling.
+3. **Search relevance filtering works for the observed cases.** `Ramzul Ramli`, `Ramzul Mazwan Ramli`, `Ramzulhakim Ramli` and `Microsoft Windows` all produced relevant result sets in the latest direct tests.
+4. **Identity separation remains required.** `Ramzulhakim Ramli` is a separate known person. It may appear as a weaker compound-name candidate in a broad `Ramzul Ramli` search, but it must not be merged into the test subject without corroborating evidence.
 
 ## Immediate Architectural Step
 
-The immediate engineering task is **search-result quality/relevance validation in `src/search.js`**.
+The next step is no longer direct `/search` debugging. It is **retesting `/investigate` with the golden identity cases**.
 
-The quality layer should:
-- Compare the query against result titles and snippets.
-- Recognize useful aliases and partial-name matches.
-- Penalize result sets dominated by unrelated terms/domains.
-- Reject obviously contaminated result sets.
-- Trigger bounded SearXNG fallback when appropriate.
-- Preserve useful results even when some individual results are weak.
-- Avoid turning generic webpage/navigation terms into investigation discoveries.
+The investigation tests should verify that:
+- irrelevant Microsoft/AppLocker pages no longer contaminate discoveries;
+- generic terms such as `control`, `windows` and `policy` do not dominate a personal investigation;
+- `Ramzul Mazwan Ramli` can be connected as a possible full-name form of `Ramzul Ramli` only through evidence;
+- `Ramzulhakim Ramli` remains a separate candidate/person;
+- recursion remains within the existing resource budgets.
 
-For the golden test case, a search for `Ramzul Ramli` may legitimately return `Ramzul Mazwan Ramli`, but `Ramzulhakim Ramli` must not automatically be merged into the same identity.
-
-Only after direct `/search` quality is stable should deeper recursive investigation, identity resolution and relationship extraction be expanded.
+Only after these tests pass should deeper identity resolution, relationship extraction and recursive discovery be expanded.
