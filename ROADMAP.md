@@ -12,7 +12,7 @@ Status: COMPLETE
 
 ## Phase 1 — Search
 
-Status: PROVIDER FALLBACK WORKING / SEARCH QUALITY BLOCKER
+Status: INITIAL RELEVANCE VALIDATION WORKING
 
 - [x] `/search`
 - [x] DuckDuckGo provider
@@ -26,11 +26,14 @@ Status: PROVIDER FALLBACK WORKING / SEARCH QUALITY BLOCKER
 - [x] SearXNG integration
 - [x] DuckDuckGo → SearXNG automatic fallback
 - [x] Bounded SearXNG fallback to protect Worker subrequests
-- [ ] Search-result quality/relevance validation
-- [ ] Validate multiple SearXNG instances for quality
-- [ ] Search result ranking
+- [x] Initial search-result quality/relevance validation
+- [x] Exact phrase and all-term matching
+- [x] Compound-name partial-match penalty
+- [ ] Validate more SearXNG instances for quality
+- [ ] Advanced search result ranking
+- [ ] Broader noisy-result detection
 
-Current blocker: public SearXNG instances can return valid JSON with irrelevant results. The next task is to detect poor-quality result sets before returning them and use a bounded fallback when appropriate.
+Recent direct tests pass for `Ramzul Ramli`, `Ramzul Mazwan Ramli`, `Ramzulhakim Ramli` and `Microsoft Windows`.
 
 ## Phase 2 — Web Reading
 
@@ -69,7 +72,7 @@ Status: INITIAL IMPLEMENTATION
 
 ## Phase 4 — Discovery Intelligence
 
-Status: INITIAL IMPLEMENTATION / REFINEMENT BLOCKED BY SEARCH QUALITY
+Status: INITIAL IMPLEMENTATION / RETEST READY
 
 - [x] `/investigate`
 - [x] Seed search
@@ -83,16 +86,18 @@ Status: INITIAL IMPLEMENTATION / REFINEMENT BLOCKED BY SEARCH QUALITY
 - [x] Queue deduplication
 - [x] Investigation budgets
 - [x] Recursion depth control
-- [ ] Search-result relevance scoring
+- [x] Initial search-result relevance scoring
 - [ ] Better entity confidence
 - [ ] Source confidence
 - [ ] Related-query generation
 - [ ] Priority queue
 - [ ] Identity resolution
 
+The next gate is to confirm that direct-search relevance improvements prevent contaminated pages from polluting `/investigate`.
+
 ## Phase 5 — Recursive Crawler
 
-Status: CONTROLLED INITIAL WORKFLOW
+Status: CONTROLLED INITIAL WORKFLOW / RETEST READY
 
 - [x] Seed investigation
 - [x] Depth 0
@@ -101,11 +106,12 @@ Status: CONTROLLED INITIAL WORKFLOW
 - [x] Page/search/entity/queue limits
 - [x] Visited-query tracking
 - [x] Search-provider fallback
+- [ ] Golden identity investigation tests
 - [ ] Reliable multi-provider recursion testing
 - [ ] Relevance threshold refinement
 - [ ] Domain controls
 
-Do not increase crawl budgets until search quality is stable.
+Do not increase crawl budgets until the golden investigation tests pass.
 
 ## Phase 6 — Knowledge Graph
 
@@ -183,13 +189,14 @@ Status: FUTURE
 
 ## Current Priority
 
-1. Implement `/search` result-quality/relevance validation.
-2. Test `/search?provider=searxng` and `/search?provider=auto`.
-3. Use `Ramzul Ramli` as the known golden test case while ensuring `Ramzulhakim Ramli` is not automatically merged as the same person.
-4. Re-test `/investigate` only after search quality is reliable.
-5. Refine entity and identity scoring.
-6. Strengthen controlled recursion.
-7. Build relationship/graph structures.
-8. Build UI and reporting.
+1. Deploy the latest GitHub code to Cloudflare.
+2. Test `/investigate` with `Ramzul Ramli`.
+3. Test `/investigate` with `Ramzul Mazwan Ramli`.
+4. Test `/investigate` with `Ramzulhakim Ramli` as the separate-person control case.
+5. Verify generic noise such as `control`, `windows` and `policy` no longer dominates the investigation.
+6. Refine identity and entity scoring.
+7. Strengthen controlled recursion.
+8. Build relationship/graph structures.
+9. Build UI and reporting.
 
 Do not jump directly to unrestricted crawling.
