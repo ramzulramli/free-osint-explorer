@@ -39,6 +39,53 @@ function looksLikeChallenge(html) {
   return /captcha|robot|unusual traffic|automated|bot detection|challenge/i.test(String(html || ""));
 }
 
+function normalizeSearchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/https?:\/\/[^\s]+/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function searchTerms(query) {
+  return [...new Set(normalizeSearchText(query).split(" ").filter(term => term.length >= 2))];
+}
+
+// Public SearXNG instances can return HTTP 200 + valid JSON while serving an
+// unrelated cached/contaminated result set. Score titles/snippets locally so
+// obviously unrelated results do not enter the crawler.
+function scoreSearchResult(result, terms) {
+  const titleWords = normalizeSearchText(result.title).split(" ").filter(Boolean);
+  const snippetWords = normalizeSearchText(result.snippet).split(" ").filter(Boolean);
+  if (!titleWords.length && !snippetWords.length) return 0;
+
+  let matched = 0;
+  for (const term of terms) {
+    if (titleWords.includes(term)) matched += 3;
+    else if (snippetWords.includes(term)) matched += 1;
+  }
+  return matched;
+}
+
+function validateAndRankResults(results, query) {
+  const terms = searchTerms(query);
+  if (!terms.length) throw new Error("Search query must contain at least one usable term");
+
+  const ranked = results
+    .map((result, index) => ({ ...result, _relevance: scoreSearchResult(result, terms), _index: index }))
+    .filter(result => result._relevance > 0)
+    .sort((a, b) => b._relevance - a._relevance || a._index - b._index)
+    .map(({ _relevance, _index, ...result }) => result);
+
+  // HTTP 200 + valid JSON is not enough. A zero-match response is treated as
+  // a failed/irrelevant provider response so SearXNG can try its one fallback.
+  if (!ranked.length) {
+    throw new Error("Search provider returned no relevant results for this query");
+  }
+  return ranked;
+}
+
 async function duckduckgo(query) {
   if (!query || query.length > 499) throw new Error("Search query must be between 1 and 499 characters");
   const attempts = [
@@ -63,7 +110,7 @@ async function duckduckgo(query) {
     if (!response.ok) continue;
     if (looksLikeChallenge(html)) { challengeDetected = true; continue; }
     const results = parseDuckDuckGoResults(html);
-    if (results.length) return { provider: "duckduckgo", query, results };
+    if (results.length) return { provider: "duckduckgo", query, results: validateAndRankResults(results, query) };
     if (/result__a|result__snippet|result[_\-]links|no-results/i.test(html)) return { provider: "duckduckgo", query, results: [] };
   }
   if (challengeDetected) throw new Error("DuckDuckGo returned a bot/challenge response; search was not parsed");
@@ -92,7 +139,7 @@ async function querySearxInstance(instance, query) {
   let data;
   try { data = JSON.parse(text); } catch { throw new Error("non-JSON response; JSON API may be disabled"); }
   const seen = new Set();
-  const results = (Array.isArray(data.results) ? data.results : [])
+  const rawResults = (Array.isArray(data.results) ? data.results : [])
     .map(result => ({
       title: stripHtml(result.title || ""),
       url: String(result.url || result.link || ""),
@@ -100,8 +147,8 @@ async function querySearxInstance(instance, query) {
     }))
     .filter(result => /^https?:\/\//i.test(result.url) && !seen.has(result.url) && seen.add(result.url))
     .filter(result => result.title || result.snippet);
-  if (!results.length) throw new Error("empty results");
-  return results;
+  if (!rawResults.length) throw new Error("empty results");
+  return validateAndRankResults(rawResults, query);
 }
 
 async function searxng(query, env = {}) {
@@ -143,4 +190,4 @@ export async function search(query, env = {}, requestedProvider = null) {
   return { ...fallback, attemptedProviders: [...attempts, "searxng"] };
 }
 
-export { duckduckgo, searxng, DEFAULT_SEARXNG_URL };
+export { duckduckgo, searxng, DEFAULT_SEARXNG_URL, validateAndRankResults };
