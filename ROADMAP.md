@@ -10,134 +10,104 @@ Status: COMPLETE
 - [x] Production Worker URL
 - [x] Browser-based development
 
----
+## Phase 1 — Search
 
-# Phase 1 — Search
-
-Status: PROVIDER ABSTRACTION IMPLEMENTED / FALLBACK CONFIGURATION PENDING
+Status: PROVIDER FALLBACK WORKING / SEARCH QUALITY BLOCKER
 
 - [x] `/search`
 - [x] DuckDuckGo provider
-- [x] Search result parsing
+- [x] Search parsing
 - [x] URL decoding
 - [x] Advertisement filtering
 - [x] Duplicate removal
-- [x] Search testing
 - [x] Bot/challenge detection
 - [x] Explicit provider failure reporting
-- [x] DuckDuckGo fallback parsing attempt
 - [x] Search provider abstraction
-- [x] SearXNG provider integration
-- [x] Automatic DuckDuckGo → SearXNG fallback
-- [x] Configurable provider selection
-- [ ] Configure and validate a live SearXNG instance
+- [x] SearXNG integration
+- [x] DuckDuckGo → SearXNG automatic fallback
+- [x] Bounded SearXNG fallback to protect Worker subrequests
+- [ ] Search-result quality/relevance validation
+- [ ] Validate multiple SearXNG instances for quality
 - [ ] Search result ranking
 
-Current blocker: DuckDuckGo can return bot/challenge responses from Cloudflare Workers. The code now falls back to a configured SearXNG endpoint when available. SearXNG JSON output must be enabled by the selected instance.
+Current blocker: public SearXNG instances can return valid JSON with irrelevant results. The next task is to detect poor-quality result sets before returning them and use a bounded fallback when appropriate.
 
----
+## Phase 2 — Web Reading
 
-# Phase 2 — Web Reading
-
-Status: COMPLETE
+Status: COMPLETE (CORE)
 
 - [x] `/fetch`
 - [x] `/read`
 - [x] HTML fetching
-- [x] Title extraction
-- [x] Text extraction
-- [x] Link extraction
-- [x] Relative URL normalization
+- [x] Title/text/link extraction
+- [x] URL normalization
 - [x] Duplicate link removal
-- [x] Real-world page testing
-- [x] Metadata extraction groundwork
-- [ ] Improve article extraction
-- [ ] Detect page type
-- [ ] Handle PDFs
+- [x] Real-world testing
+- [ ] Better article extraction
+- [ ] Page-type detection
+- [ ] PDF handling
 
----
+## Phase 3 — Entity Extraction
 
-# Phase 3 — Entity Extraction
+Status: INITIAL IMPLEMENTATION
 
-Status: COMPLETE (INITIAL IMPLEMENTATION)
-
-- [x] Person candidate extraction
-- [x] Organisation candidate extraction
-- [x] Location extraction
-- [x] URL extraction
-- [x] Date extraction
-- [x] Year extraction
-- [x] Keyword extraction
-- [x] Username extraction
-- [x] Entity normalization
-- [x] Entity deduplication
-- [x] Confidence scoring
-- [x] False-positive filtering improvements
-
-Still to improve:
-
+- [x] Person candidates
+- [x] Organisation candidates
+- [x] Location candidates
+- [x] URLs
+- [x] Dates/years
+- [x] Keywords
+- [x] Usernames
+- [x] Normalization/deduplication
+- [x] Basic confidence scoring
+- [x] Initial false-positive filtering
 - [ ] Better person/entity recognition
 - [ ] Better organisation filtering
 - [ ] Email extraction
-- [ ] Phone extraction with context validation
+- [ ] Phone extraction with context
 - [ ] More language-aware extraction
 
----
+## Phase 4 — Discovery Intelligence
 
-# Phase 4 — Discovery Intelligence
+Status: INITIAL IMPLEMENTATION / REFINEMENT BLOCKED BY SEARCH QUALITY
 
-Status: INITIAL IMPLEMENTATION COMPLETE / REFINEMENT IN PROGRESS
-
-- [x] `/investigate` endpoint
-- [x] Seed query support
-- [x] Search result collection
-- [x] Controlled initial page reading
+- [x] `/investigate`
+- [x] Seed search
+- [x] Controlled page reading
 - [x] Entity aggregation
-- [x] Basic duplicate prevention
-- [x] Investigation response structure
-- [x] Initial relevance scoring
-- [x] Initial entity ranking
+- [x] Duplicate prevention
+- [x] Relevance scoring groundwork
 - [x] Metadata separation
-- [x] Useful discovery filtering
+- [x] Discovery filtering
 - [x] Discovery queue
 - [x] Queue deduplication
-- [x] Investigation limits and budgeting
-- [x] Configurable recursion depth
-- [ ] Better relevance scoring
-- [ ] Entity confidence refinement
+- [x] Investigation budgets
+- [x] Recursion depth control
+- [ ] Search-result relevance scoring
+- [ ] Better entity confidence
 - [ ] Source confidence
-- [ ] Related keyword generation
-- [ ] Better search query generation
+- [ ] Related-query generation
 - [ ] Priority queue
+- [ ] Identity resolution
 
----
-
-# Phase 5 — Recursive Crawler
+## Phase 5 — Recursive Crawler
 
 Status: CONTROLLED INITIAL WORKFLOW
 
 - [x] Seed investigation
-- [x] Initial investigation workflow
 - [x] Depth 0
-- [x] Depth 1 workflow support
+- [x] Depth 1 support
 - [x] Depth 2 maximum
-- [x] Maximum depth
-- [x] Maximum pages
-- [x] Maximum searches
-- [x] Maximum entities
-- [x] Execution limits
+- [x] Page/search/entity/queue limits
 - [x] Visited-query tracking
-- [x] Queue-size limit
-- [x] Search-provider fallback integration
+- [x] Search-provider fallback
+- [ ] Reliable multi-provider recursion testing
 - [ ] Relevance threshold refinement
 - [ ] Domain controls
-- [ ] Robust multi-provider recursion testing
 
-Important: recursive investigation remains bounded. Do not expand the crawl budget until multi-provider search has been validated.
+Do not increase crawl budgets until search quality is stable.
 
----
-
-# Phase 6 — Knowledge Graph
+## Phase 6 — Knowledge Graph
 
 Status: PLANNED
 
@@ -150,9 +120,7 @@ Status: PLANNED
 - [ ] Interactive mind map
 - [ ] Timeline
 
----
-
-# Phase 7 — Investigation UI
+## Phase 7 — Investigation UI
 
 Status: PLANNED
 
@@ -167,17 +135,13 @@ Status: PLANNED
 - [ ] Timeline
 - [ ] Evidence panel
 
----
-
-# Phase 8 — Reporting
+## Phase 8 — Reporting
 
 Status: PLANNED
 
 - [ ] Investigation summary
 - [ ] Key findings
-- [ ] Entity table
-- [ ] Source table
-- [ ] Relationship table
+- [ ] Entity/source/relationship tables
 - [ ] Timeline
 - [ ] Confidence indicators
 - [ ] Limitations
@@ -185,14 +149,11 @@ Status: PLANNED
 - [ ] PDF export
 - [ ] Archive/export
 
----
-
-# Phase 9 — Advanced OSINT
+## Phase 9 — Advanced OSINT
 
 Status: FUTURE
 
 Possible capabilities:
-
 - [ ] Username correlation
 - [ ] Domain intelligence
 - [ ] Email correlation
@@ -200,47 +161,35 @@ Possible capabilities:
 - [ ] Image metadata
 - [ ] Reverse-image search integration
 - [ ] Historical webpages
-- [ ] DNS information
+- [ ] DNS
 - [ ] Certificate information
 - [ ] WHOIS/RDAP
 - [ ] RSS/news monitoring
 - [ ] Document metadata
 - [ ] Cross-source correlation
 
-These will only be added where technically and legally appropriate and where free/public access is practical.
+Only add capabilities where technically and legally appropriate and where free/public access is practical.
 
----
-
-# Phase 10 — Optimization
+## Phase 10 — Optimization
 
 Status: FUTURE
 
-- [ ] Cache repeated searches
-- [ ] Cache webpage reads
-- [ ] Reduce duplicate requests
-- [ ] Improve scoring
-- [ ] Improve extraction
-- [ ] Reduce Worker execution time
-- [ ] Reduce resource consumption
-- [ ] Improve investigation speed
+- [ ] Search caching
+- [ ] Page-read caching
+- [ ] Duplicate-request reduction
+- [ ] Improved scoring
+- [ ] Improved extraction
+- [ ] Reduced Worker execution time/resource use
 
----
+## Current Priority
 
-# Current Priority
-
-The immediate development order is:
-
-1. Configure and validate a live SearXNG endpoint.
-2. Test `/search?provider=searxng`.
-3. Test `/search` automatic DuckDuckGo → SearXNG fallback.
-4. Re-test `/investigate` with several seed types.
-5. Refine relevance/entity scoring.
-6. Strengthen controlled recursive investigation.
-7. Build relationship extraction.
-8. Build graph data structures.
-9. Build the UI.
-10. Build reporting/PDF.
+1. Implement `/search` result-quality/relevance validation.
+2. Test `/search?provider=searxng` and `/search?provider=auto`.
+3. Use `Ramzul Ramli` as the known golden test case while ensuring `Ramzulhakim Ramli` is not automatically merged as the same person.
+4. Re-test `/investigate` only after search quality is reliable.
+5. Refine entity and identity scoring.
+6. Strengthen controlled recursion.
+7. Build relationship/graph structures.
+8. Build UI and reporting.
 
 Do not jump directly to unrestricted crawling.
-
-Each stage must be tested before moving to the next stage.
