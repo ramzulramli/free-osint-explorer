@@ -1,4 +1,5 @@
-import { SEARCH_PROVIDERS, extractEntityCandidates, extractTitle, extractReadableText } from "./index.js";
+import { extractEntityCandidates, extractTitle, extractReadableText } from "./index.js";
+import { search } from "./search.js";
 
 const LIMITS = {
   maxSearchResults: 5,
@@ -64,19 +65,16 @@ function scoreEntity(entity, seedQuery) {
 async function fetchEntities(url) {
   const targetUrl = new URL(url);
   if (!["http:", "https:"].includes(targetUrl.protocol)) throw new Error("Only HTTP and HTTPS URLs are allowed");
-
   const response = await fetch(targetUrl.toString(), { headers: { "User-Agent": "Mozilla/5.0 (compatible; FreeOSINTExplorer/0.1)" } });
   if (!response.ok) throw new Error(`Target returned HTTP ${response.status}`);
-
   const html = await response.text();
   const title = extractTitle(html);
   const text = extractReadableText(html);
   const entities = extractEntityCandidates(text);
-
   return { title, url: targetUrl.toString(), httpStatus: response.status, textLength: text.length, entities };
 }
 
-async function investigateQuery(query, depth, state) {
+async function investigateQuery(query, depth, state, env, requestedProvider) {
   const normalizedQuery = normalize(query);
   if (!normalizedQuery || state.visitedQueries.has(normalizedQuery)) return null;
   if (state.searchRequests >= LIMITS.maxSearchRequests) return null;
@@ -84,7 +82,7 @@ async function investigateQuery(query, depth, state) {
   state.visitedQueries.add(normalizedQuery);
   state.searchRequests += 1;
 
-  const searchData = await SEARCH_PROVIDERS.duckduckgo(query);
+  const searchData = await search(query, env, requestedProvider);
   const searchResults = Array.isArray(searchData.results) ? searchData.results.slice(0, LIMITS.maxSearchResults) : [];
   const pages = [];
   const failedSources = [];
@@ -123,16 +121,17 @@ async function investigateQuery(query, depth, state) {
   const discoveries = rankedEntities.filter(entity => isUsefulDiscovery(entity, query)).map(entity => ({ type: entity.type, value: entity.value, normalized: entity.normalized, confidence: entity.confidence, score: entity.score, sourceCount: entity.sourceCount, sources: entity.sources })).slice(0, LIMITS.maxDiscoveries);
   const metadata = allEntities.filter(entity => METADATA_TYPES.has(entity.type)).sort((a, b) => b.score - a.score).slice(0, LIMITS.maxRankedEntities);
 
-  return { query, depth, search: { provider: searchData.provider, resultCount: searchData.results.length, processedCount: searchResults.length }, sources: { successful: pages, failed: failedSources, successfulCount: pages.length, failedCount: failedSources.length }, entities: rankedEntities, discoveries, metadata };
+  return { query, depth, search: { provider: searchData.provider, attemptedProviders: searchData.attemptedProviders || [searchData.provider], resultCount: searchData.results.length, processedCount: searchResults.length }, sources: { successful: pages, failed: failedSources, successfulCount: pages.length, failedCount: failedSources.length }, entities: rankedEntities, discoveries, metadata };
 }
 
-async function investigate(request) {
+async function investigate(request, env) {
   const url = new URL(request.url);
   const query = url.searchParams.get("q")?.trim();
   if (!query) return Response.json({ status: "error", error: "Missing search query", usage: "/investigate?q=keyword" }, { status: 400 });
 
   const requestedDepth = Number.parseInt(url.searchParams.get("depth") || "0", 10);
   const depth = Number.isFinite(requestedDepth) ? Math.max(0, Math.min(LIMITS.maxDepth, requestedDepth)) : 0;
+  const requestedProvider = url.searchParams.get("provider")?.trim().toLowerCase() || null;
   const startedAt = Date.now();
   const state = { visitedQueries: new Set(), searchRequests: 0, pagesProcessed: 0, sourcesSeen: new Set() };
   const queue = [{ query, depth: 0, parent: null }];
@@ -142,10 +141,9 @@ async function investigate(request) {
   try {
     while (queue.length && investigations.length < LIMITS.maxQueueItems) {
       const item = queue.shift();
-      const result = await investigateQuery(item.query, item.depth, state);
+      const result = await investigateQuery(item.query, item.depth, state, env, requestedProvider);
       if (!result) continue;
       investigations.push({ ...result, parent: item.parent });
-
       if (item.depth >= depth) continue;
       for (const discovery of result.discoveries) {
         if (queue.length >= LIMITS.maxQueueItems) break;
@@ -172,33 +170,39 @@ async function investigate(request) {
       query,
       limits: LIMITS,
       depth,
-      search: root?.search || { provider: "duckduckgo", resultCount: 0, processedCount: 0 },
+      providerRequested: requestedProvider || env.SEARCH_PROVIDER || "auto",
+      search: root?.search || { provider: "none", attemptedProviders: [], resultCount: 0, processedCount: 0 },
       sources: root?.sources || { successful: [], failed: [], successfulCount: 0, failedCount: 0 },
       entityCount: root?.entities?.length || 0,
       entities: root?.entities || [],
       discoveryCount: uniqueDiscoveryMap.size,
       discoveries: [...uniqueDiscoveryMap.values()].sort((a, b) => b.score - a.score).slice(0, LIMITS.maxDiscoveries),
       metadata: root?.metadata || [],
-      queue: {
-        requestedDepth: depth,
-        investigationsRun: investigations.length,
-        searchRequests: state.searchRequests,
-        pagesProcessed: state.pagesProcessed,
-        queuedRemaining: queue.length,
-        visitedQueries: [...state.visitedQueries]
-      },
+      queue: { requestedDepth: depth, investigationsRun: investigations.length, searchRequests: state.searchRequests, pagesProcessed: state.pagesProcessed, queuedRemaining: queue.length, visitedQueries: [...state.visitedQueries] },
       investigations: investigations.slice(0, LIMITS.maxQueueItems),
       timing: { durationMs: Date.now() - startedAt }
     });
   } catch (error) {
-    return Response.json({ status: "error", message: error.message, query }, { status: 502 });
+    return Response.json({ status: "error", message: error.message, query, providerRequested: requestedProvider || env.SEARCH_PROVIDER || "auto" }, { status: 502 });
   }
 }
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname === "/investigate") return investigate(request);
+
+    if (url.pathname === "/search") {
+      const query = url.searchParams.get("q")?.trim();
+      if (!query) return Response.json({ status: "error", error: "Missing search query", usage: "/search?q=keyword" }, { status: 400 });
+      try {
+        const requestedProvider = url.searchParams.get("provider")?.trim().toLowerCase() || null;
+        return Response.json({ status: "success", ...(await search(query, env, requestedProvider)) });
+      } catch (error) {
+        return Response.json({ status: "error", message: error.message }, { status: 502 });
+      }
+    }
+
+    if (url.pathname === "/investigate") return investigate(request, env);
     return import("./index.js").then(module => module.default.fetch(request, env, ctx));
   }
 };
