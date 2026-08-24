@@ -1,11 +1,108 @@
 const SEARCH_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36";
 
-// Keep the provider fan-out deliberately small. One logical search must not burn
-// the Cloudflare Worker subrequest budget just probing public instances.
+// Keep provider fan-out deliberately small to protect the Cloudflare Worker
+// subrequest budget.
 const DEFAULT_SEARXNG_URL = "https://search.mectov.my.id";
 
 function stripHtml(value) {
   return String(value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function normalizeSearchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/https?:\/\/[^\s]+/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function searchTerms(query) {
+  return [...new Set(normalizeSearchText(query).split(" ").filter(term => term.length >= 2))];
+}
+
+function tokenizeName(value) {
+  return normalizeSearchText(value).split(" ").filter(Boolean);
+}
+
+function isNameLikeQuery(query) {
+  const terms = searchTerms(query);
+  return terms.length >= 2 && terms.length <= 5 && terms.every(term => /^[a-z]+$/.test(term));
+}
+
+function scoreSearchResult(result, query) {
+  const terms = searchTerms(query);
+  const title = normalizeSearchText(result.title);
+  const snippet = normalizeSearchText(result.snippet);
+  const titleWords = title.split(" ").filter(Boolean);
+  const snippetWords = snippet.split(" ").filter(Boolean);
+  if (!titleWords.length && !snippetWords.length) return { score: 0, matchType: "none", matchedTerms: [] };
+
+  const exactPhrase = normalizeSearchText(query);
+  const titleHasExactPhrase = exactPhrase.length > 0 && (` ${title} `).includes(` ${exactPhrase} `);
+  const snippetHasExactPhrase = exactPhrase.length > 0 && (` ${snippet} `).includes(` ${exactPhrase} `);
+  const matchedTerms = terms.filter(term => titleWords.includes(term) || snippetWords.includes(term));
+  const titleMatches = terms.filter(term => titleWords.includes(term)).length;
+  const snippetMatches = terms.filter(term => !titleWords.includes(term) && snippetWords.includes(term)).length;
+
+  let score = titleMatches * 0.35 + snippetMatches * 0.10;
+  let matchType = "partial";
+
+  if (titleHasExactPhrase) {
+    score = 1.0;
+    matchType = "exact_phrase";
+  } else if (titleMatches === terms.length) {
+    score = 0.90;
+    matchType = "all_terms_in_title";
+  } else if (titleMatches >= 1 && snippetMatches >= 1) {
+    score = 0.65;
+    matchType = "split_name";
+  } else if (titleMatches >= 1) {
+    score = 0.45;
+    matchType = "partial_title";
+  } else if (snippetMatches >= 1) {
+    score = 0.20;
+    matchType = "snippet_only";
+  }
+
+  // Name searches need one extra distinction: a compound first-name token
+  // such as "ramzulhakim" should not receive the same score as the separate
+  // first-name token "ramzul". It can remain in results as a possible lead,
+  // but it must be visibly weaker until identity resolution corroborates it.
+  if (isNameLikeQuery(query) && !titleHasExactPhrase) {
+    const titleNameWords = tokenizeName(result.title);
+    const compoundMatches = terms.filter(term =>
+      titleNameWords.some(word => word.length > term.length && word.startsWith(term))
+    );
+    if (compoundMatches.length && !titleWords.includes(compoundMatches[0])) {
+      score = Math.min(score, 0.35);
+      matchType = "compound_name_partial";
+    }
+  }
+
+  if (snippetHasExactPhrase && score < 0.75) {
+    score = Math.max(score, 0.55);
+    matchType = "exact_phrase_in_snippet";
+  }
+
+  return { score, matchType, matchedTerms };
+}
+
+function validateAndRankResults(results, query) {
+  const terms = searchTerms(query);
+  if (!terms.length) throw new Error("Search query must contain at least one usable term");
+
+  const ranked = results
+    .map((result, index) => {
+      const relevance = scoreSearchResult(result, query);
+      return { ...result, relevance: relevance.score, matchType: relevance.matchType, matchedTerms: relevance.matchedTerms, _index: index };
+    })
+    .filter(result => result.relevance > 0)
+    .sort((a, b) => b.relevance - a.relevance || a._index - b._index)
+    .map(({ _index, ...result }) => result);
+
+  if (!ranked.length) throw new Error("Search provider returned no relevant results for this query");
+  return ranked;
 }
 
 function parseDuckDuckGoResults(html) {
@@ -37,53 +134,6 @@ function parseDuckDuckGoResults(html) {
 
 function looksLikeChallenge(html) {
   return /captcha|robot|unusual traffic|automated|bot detection|challenge/i.test(String(html || ""));
-}
-
-function normalizeSearchText(value) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/https?:\/\/[^\s]+/g, " ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function searchTerms(query) {
-  return [...new Set(normalizeSearchText(query).split(" ").filter(term => term.length >= 2))];
-}
-
-// Public SearXNG instances can return HTTP 200 + valid JSON while serving an
-// unrelated cached/contaminated result set. Score titles/snippets locally so
-// obviously unrelated results do not enter the crawler.
-function scoreSearchResult(result, terms) {
-  const titleWords = normalizeSearchText(result.title).split(" ").filter(Boolean);
-  const snippetWords = normalizeSearchText(result.snippet).split(" ").filter(Boolean);
-  if (!titleWords.length && !snippetWords.length) return 0;
-
-  let matched = 0;
-  for (const term of terms) {
-    if (titleWords.includes(term)) matched += 3;
-    else if (snippetWords.includes(term)) matched += 1;
-  }
-  return matched;
-}
-
-function validateAndRankResults(results, query) {
-  const terms = searchTerms(query);
-  if (!terms.length) throw new Error("Search query must contain at least one usable term");
-
-  const ranked = results
-    .map((result, index) => ({ ...result, _relevance: scoreSearchResult(result, terms), _index: index }))
-    .filter(result => result._relevance > 0)
-    .sort((a, b) => b._relevance - a._relevance || a._index - b._index)
-    .map(({ _relevance, _index, ...result }) => result);
-
-  // HTTP 200 + valid JSON is not enough. A zero-match response is treated as
-  // a failed/irrelevant provider response so SearXNG can try its one fallback.
-  if (!ranked.length) {
-    throw new Error("Search provider returned no relevant results for this query");
-  }
-  return ranked;
 }
 
 async function duckduckgo(query) {
@@ -157,7 +207,6 @@ async function searxng(query, env = {}) {
   const instances = [primary, fallback].filter((value, index, list) => value && list.indexOf(value) === index).slice(0, 2);
   const failures = [];
   const attemptedInstances = [];
-
   for (const instance of instances) {
     attemptedInstances.push(instance);
     try {
@@ -167,7 +216,6 @@ async function searxng(query, env = {}) {
       failures.push(`${instance}: ${error.message}`);
     }
   }
-
   throw new Error(`All SearXNG instances failed: ${failures.join("; ")}`);
 }
 
@@ -185,9 +233,8 @@ export async function search(query, env = {}, requestedProvider = null) {
   } catch (error) {
     attempts.push(`duckduckgo:error:${error.message}`);
   }
-
   const fallback = await searxng(query, env);
   return { ...fallback, attemptedProviders: [...attempts, "searxng"] };
 }
 
-export { duckduckgo, searxng, DEFAULT_SEARXNG_URL, validateAndRankResults };
+export { duckduckgo, searxng, DEFAULT_SEARXNG_URL, validateAndRankResults, scoreSearchResult };
