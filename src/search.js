@@ -1,16 +1,17 @@
 const SEARCH_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36";
 
-function decodeHtmlEntities(text) {
-  return String(text || "")
-    .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'").replace(/&#x27;/gi, "'")
-    .replace(/&#(\d+);/g, (_, code) => { const value = Number(code); return Number.isFinite(value) && value <= 0x10ffff ? String.fromCodePoint(value) : _; })
-    .replace(/&#x([0-9a-f]+);/gi, (_, code) => { const value = parseInt(code, 16); return Number.isFinite(value) && value <= 0x10ffff ? String.fromCodePoint(value) : _; })
-    .replace(/&lt;/gi, "<").replace(/&gt;/gi, ">");
-}
+// Public instances are only a fallback pool. A user-configured SEARXNG_URL is preferred.
+// The list is intentionally small to avoid hammering public instances.
+const PUBLIC_SEARXNG_INSTANCES = [
+  "https://searx.tiekoetter.com",
+  "https://xka.cz",
+  "https://search.mectov.my.id",
+  "https://search.minus27315.dev",
+  "https://searxng.cups.moe"
+];
 
 function stripHtml(value) {
-  return decodeHtmlEntities(String(value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim());
+  return String(value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function parseDuckDuckGoResults(html) {
@@ -70,23 +71,39 @@ function buildSearxSearchUrl(baseUrl, query) {
   url.searchParams.set("q", query);
   url.searchParams.set("format", "json");
   url.searchParams.set("language", "en");
+  url.searchParams.set("categories", "general");
   return url.toString();
 }
 
 async function searxng(query, env) {
-  const configuredUrl = env?.SEARXNG_URL;
-  if (!configuredUrl) throw new Error("SearXNG fallback is not configured; set SEARXNG_URL");
-  const response = await fetch(buildSearxSearchUrl(configuredUrl, query), { headers: { "User-Agent": SEARCH_USER_AGENT, "Accept": "application/json" } });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`SearXNG returned HTTP ${response.status}`);
-  let data;
-  try { data = JSON.parse(text); } catch { throw new Error("SearXNG returned a non-JSON response; the instance may not enable the JSON format"); }
-  const results = Array.isArray(data.results) ? data.results : [];
-  const seen = new Set();
-  const normalized = results.map(result => ({ title: stripHtml(result.title || ""), url: String(result.url || result.link || ""), snippet: stripHtml(result.content || result.snippet || "") }))
-    .filter(result => /^https?:\/\//i.test(result.url) && !seen.has(result.url) && seen.add(result.url))
-    .filter(result => result.title || result.snippet);
-  return { provider: "searxng", query, results: normalized };
+  const configuredUrl = String(env?.SEARXNG_URL || "").trim();
+  const instances = configuredUrl ? [configuredUrl] : PUBLIC_SEARXNG_INSTANCES;
+  const failures = [];
+
+  for (const instance of instances) {
+    try {
+      const response = await fetch(buildSearxSearchUrl(instance, query), {
+        headers: { "User-Agent": SEARCH_USER_AGENT, "Accept": "application/json" }
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      let data;
+      try { data = JSON.parse(text); } catch { throw new Error("non-JSON response; JSON API may be disabled"); }
+      const rawResults = Array.isArray(data.results) ? data.results : [];
+      const seen = new Set();
+      const results = rawResults
+        .map(result => ({ title: stripHtml(result.title || ""), url: String(result.url || result.link || ""), snippet: stripHtml(result.content || result.snippet || "") }))
+        .filter(result => /^https?:\/\//i.test(result.url) && !seen.has(result.url) && seen.add(result.url))
+        .filter(result => result.title || result.snippet);
+
+      if (results.length) return { provider: "searxng", instance, query, results, attemptedInstances: [...instances] };
+      failures.push(`${instance}: empty results`);
+    } catch (error) {
+      failures.push(`${instance}: ${error.message}`);
+    }
+  }
+
+  throw new Error(`All SearXNG instances failed: ${failures.join("; ")}`);
 }
 
 export async function search(query, env = {}, requestedProvider = null) {
@@ -101,14 +118,13 @@ export async function search(query, env = {}, requestedProvider = null) {
     const result = await duckduckgo(query);
     attempts.push("duckduckgo");
     if (result.results.length || !env.SEARXNG_URL) return { ...result, attemptedProviders: attempts };
-    if (!env.SEARXNG_URL) return { ...result, attemptedProviders: attempts };
+    return { ...result, attemptedProviders: attempts };
   } catch (error) {
     attempts.push(`duckduckgo:error:${error.message}`);
-    if (!env.SEARXNG_URL) throw error;
   }
 
   const fallback = await searxng(query, env);
   return { ...fallback, attemptedProviders: [...attempts, "searxng"] };
 }
 
-export { duckduckgo, searxng };
+export { duckduckgo, searxng, PUBLIC_SEARXNG_INSTANCES };
