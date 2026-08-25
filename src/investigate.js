@@ -50,9 +50,10 @@ function scoreEntity(entity, seedQuery) {
   const typeWeights = { email:1, phone:.95, username:.95, person_candidate:.85, organisation_candidate:.80, location_candidate:.65, url:.55, date:.35, year:.20, keyword:.15 };
   const confidence = Number(entity.confidence || 0);
   const sourceBoost = Math.min(1, entity.sourceCount / 3);
+  const evidenceBoost = Math.min(1, (entity.evidenceCount || 0) / 3);
   const seed = normalize(seedQuery), value = normalize(entity.value);
   const seedMatch = seed && value && seed.includes(value) ? 1 : 0;
-  return Number(Math.min(1, confidence*.55 + sourceBoost*.30 + (typeWeights[entity.type] || .25)*.15 + seedMatch*.10).toFixed(4));
+  return Number(Math.min(1, confidence*.50 + sourceBoost*.20 + evidenceBoost*.20 + (typeWeights[entity.type] || .25)*.10 + seedMatch*.10).toFixed(4));
 }
 
 async function fetchEntities(url) {
@@ -65,16 +66,37 @@ async function fetchEntities(url) {
   return { title, url:targetUrl.toString(), httpStatus:response.status, textLength:text.length, entities };
 }
 
-function addEntityToMap(entityMap, entity, source) {
+function addEntityToMap(entityMap, entity, source, isEvidence = false) {
   if (!entity?.type || !entity?.normalized) return;
   const key = `${entity.type}:${normalize(entity.normalized)}`;
   const existing = entityMap.get(key);
   if (existing) {
-    if (!existing.sources.some(ref => ref.url === source.url)) { existing.sourceCount += 1; existing.sources.push({ title:source.title, url:source.url }); }
+    if (!existing.sources.some(ref => ref.url === source.url)) {
+      existing.sourceCount += 1;
+      existing.sources.push({ title:source.title, url:source.url, evidence:Boolean(isEvidence), httpStatus:source.httpStatus ?? null, textLength:source.textLength ?? 0 });
+    }
+    if (isEvidence && !existing.evidenceUrls.has(source.url)) {
+      existing.evidenceCount += 1;
+      existing.evidenceUrls.add(source.url);
+    }
     existing.confidence = Math.max(existing.confidence, Number(entity.confidence || 0));
     return;
   }
-  entityMap.set(key, { type:entity.type, value:entity.value, normalized:entity.normalized, confidence:Number(entity.confidence || 0), sourceCount:1, sources:[{ title:source.title, url:source.url }] });
+  entityMap.set(key, {
+    type:entity.type,
+    value:entity.value,
+    normalized:entity.normalized,
+    confidence:Number(entity.confidence || 0),
+    sourceCount:1,
+    evidenceCount:isEvidence ? 1 : 0,
+    evidenceUrls:new Set(isEvidence ? [source.url] : []),
+    sources:[{ title:source.title, url:source.url, evidence:Boolean(isEvidence), httpStatus:source.httpStatus ?? null, textLength:source.textLength ?? 0 }]
+  });
+}
+
+function serializeEntity(entity, seedQuery) {
+  const { evidenceUrls, ...safeEntity } = entity;
+  return { ...safeEntity, score:scoreEntity(entity, seedQuery) };
 }
 
 async function investigateQuery(query, depth, state, env, requestedProvider) {
@@ -88,10 +110,10 @@ async function investigateQuery(query, depth, state, env, requestedProvider) {
   const pages = [], failedSources = [], entityMap = new Map();
 
   for (const result of searchResults.slice(0, LIMITS.maxPages)) {
-    const resultSource = { title:result.title || "Search result", url:result.url };
+    const resultSource = { title:result.title || "Search result", url:result.url, httpStatus:null, textLength:0 };
     const resultText = `${result.title || ""}. ${result.snippet || ""}`.trim();
     if (resultText) {
-      for (const entity of extractEntityCandidates(resultText).slice(0, LIMITS.maxEntitiesPerSource)) addEntityToMap(entityMap, entity, resultSource);
+      for (const entity of extractEntityCandidates(resultText).slice(0, LIMITS.maxEntitiesPerSource)) addEntityToMap(entityMap, entity, resultSource, false);
     }
 
     state.pagesProcessed += 1;
@@ -99,15 +121,16 @@ async function investigateQuery(query, depth, state, env, requestedProvider) {
       const entityData = await fetchEntities(result.url);
       const source = { title:entityData.title || result.title || "", url:result.url, httpStatus:entityData.httpStatus, textLength:entityData.textLength || 0, entityCount:entityData.entities.length };
       pages.push(source);
-      for (const entity of entityData.entities.slice(0, LIMITS.maxEntitiesPerSource)) addEntityToMap(entityMap, entity, source);
+      const isEvidence = entityData.textLength > 0 && entityData.entities.length > 0;
+      for (const entity of entityData.entities.slice(0, LIMITS.maxEntitiesPerSource)) addEntityToMap(entityMap, entity, source, isEvidence);
     } catch (error) {
       failedSources.push({ title:result.title || "", url:result.url, reason:error.message || "Unknown source error" });
     }
   }
 
-  const allEntities = [...entityMap.values()].map(entity => ({ ...entity, score:scoreEntity(entity, query) }));
-  const rankedEntities = allEntities.sort((a,b) => b.score-a.score || b.sourceCount-a.sourceCount || b.confidence-a.confidence).slice(0, LIMITS.maxRankedEntities);
-  const discoveries = rankedEntities.filter(entity => isUsefulDiscovery(entity, query)).map(entity => ({ type:entity.type, value:entity.value, normalized:entity.normalized, confidence:entity.confidence, score:entity.score, sourceCount:entity.sourceCount, sources:entity.sources })).slice(0, LIMITS.maxDiscoveries);
+  const allEntities = [...entityMap.values()].map(entity => serializeEntity(entity, query));
+  const rankedEntities = allEntities.sort((a,b) => b.score-a.score || b.evidenceCount-a.evidenceCount || b.sourceCount-a.sourceCount || b.confidence-a.confidence).slice(0, LIMITS.maxRankedEntities);
+  const discoveries = rankedEntities.filter(entity => isUsefulDiscovery(entity, query)).map(entity => ({ type:entity.type, value:entity.value, normalized:entity.normalized, confidence:entity.confidence, score:entity.score, sourceCount:entity.sourceCount, evidenceCount:entity.evidenceCount, sources:entity.sources })).slice(0, LIMITS.maxDiscoveries);
   const metadata = allEntities.filter(entity => METADATA_TYPES.has(entity.type)).sort((a,b) => b.score-a.score).slice(0, LIMITS.maxRankedEntities);
 
   return { query, depth, search:{ provider:searchData.provider, instance:searchData.instance, attemptedProviders:searchData.attemptedProviders || [searchData.provider], attemptedInstances:searchData.attemptedInstances || [], resultCount:searchData.results.length, processedCount:searchResults.length }, sources:{ successful:pages, failed:failedSources, successfulCount:pages.length, failedCount:failedSources.length }, entities:rankedEntities, discoveries, metadata };
