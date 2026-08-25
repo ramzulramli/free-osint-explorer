@@ -42,7 +42,7 @@ function isUsefulDiscovery(entity, seedQuery) {
   return DISCOVERY_TYPES.has(entity.type);
 }
 function scoreEntity(entity, seedQuery) {
-  const typeWeights = { email:1, phone:.95, username:.95, person_candidate:.85, organisation_candidate:.80, location_candidate:.65, url:.55, date:.35, year:.20, keyword:.15 };
+  const typeWeights = { email:1, phone:.95, username:.95, person_candidate:.85, organisation_candidate:.80, location_candidate:.65, url:.55 };
   const confidence = Number(entity.confidence || 0);
   const sourceBoost = Math.min(1, entity.sourceCount / 3);
   const evidenceBoost = Math.min(1, (entity.evidenceCount || 0) / 3);
@@ -68,38 +68,20 @@ function addEntityToMap(entityMap, entity, source, isEvidence = false) {
   if (existing) {
     const sourceRef = existing.sources.find(ref => ref.url === source.url);
     if (sourceRef) {
-      // The search-result record and fetched-page record use the same URL.
-      // Upgrade the existing source reference with real fetch/evidence data.
       if (isEvidence) sourceRef.evidence = true;
       if (source.httpStatus != null) sourceRef.httpStatus = source.httpStatus;
       if (source.textLength > 0) sourceRef.textLength = source.textLength;
-      if (isEvidence && !existing.evidenceUrls.has(source.url)) {
-        existing.evidenceCount += 1;
-        existing.evidenceUrls.add(source.url);
-      }
+      if (isEvidence && !existing.evidenceUrls.has(source.url)) { existing.evidenceCount += 1; existing.evidenceUrls.add(source.url); }
     } else {
       existing.sourceCount += 1;
       existing.sources.push({ title:source.title, url:source.url, evidence:Boolean(isEvidence), httpStatus:source.httpStatus ?? null, textLength:source.textLength ?? 0 });
-      if (isEvidence && !existing.evidenceUrls.has(source.url)) {
-        existing.evidenceCount += 1;
-        existing.evidenceUrls.add(source.url);
-      }
+      if (isEvidence && !existing.evidenceUrls.has(source.url)) { existing.evidenceCount += 1; existing.evidenceUrls.add(source.url); }
     }
     existing.confidence = Math.max(existing.confidence, Number(entity.confidence || 0));
     return;
   }
-  entityMap.set(key, {
-    type:entity.type,
-    value:entity.value,
-    normalized:entity.normalized,
-    confidence:Number(entity.confidence || 0),
-    sourceCount:1,
-    evidenceCount:isEvidence ? 1 : 0,
-    evidenceUrls:new Set(isEvidence ? [source.url] : []),
-    sources:[{ title:source.title, url:source.url, evidence:Boolean(isEvidence), httpStatus:source.httpStatus ?? null, textLength:source.textLength ?? 0 }]
-  });
+  entityMap.set(key, { type:entity.type, value:entity.value, normalized:entity.normalized, confidence:Number(entity.confidence || 0), sourceCount:1, evidenceCount:isEvidence ? 1 : 0, evidenceUrls:new Set(isEvidence ? [source.url] : []), sources:[{ title:source.title, url:source.url, evidence:Boolean(isEvidence), httpStatus:source.httpStatus ?? null, textLength:source.textLength ?? 0 }] });
 }
-
 function serializeEntity(entity, seedQuery) {
   const { evidenceUrls, ...safeEntity } = entity;
   return { ...safeEntity, score:scoreEntity(entity, seedQuery) };
@@ -110,37 +92,65 @@ async function investigateQuery(query, depth, state, env, requestedProvider) {
   if (!normalizedQuery || state.visitedQueries.has(normalizedQuery) || state.searchRequests >= LIMITS.maxSearchRequests) return null;
   state.visitedQueries.add(normalizedQuery);
   state.searchRequests += 1;
-
   const searchData = await search(query, env, requestedProvider);
   const searchResults = Array.isArray(searchData.results) ? searchData.results.slice(0, LIMITS.maxSearchResults) : [];
   const pages = [], failedSources = [], entityMap = new Map();
-
   for (const result of searchResults.slice(0, LIMITS.maxPages)) {
     const resultSource = { title:result.title || "Search result", url:result.url, httpStatus:null, textLength:0 };
     const resultText = `${result.title || ""}. ${result.snippet || ""}`.trim();
-    if (resultText) {
-      for (const entity of extractEntityCandidates(resultText).slice(0, LIMITS.maxEntitiesPerSource)) addEntityToMap(entityMap, entity, resultSource, false);
-    }
-
+    if (resultText) for (const entity of extractEntityCandidates(resultText).slice(0, LIMITS.maxEntitiesPerSource)) addEntityToMap(entityMap, entity, resultSource, false);
     state.pagesProcessed += 1;
     try {
       const entityData = await fetchEntities(result.url);
       const source = { title:entityData.title || result.title || "", url:result.url, httpStatus:entityData.httpStatus, textLength:entityData.textLength || 0, entityCount:entityData.entities.length };
       pages.push(source);
-      // An entity extracted from successfully fetched page text is genuine page evidence.
       const isEvidence = entityData.textLength > 0 && entityData.entities.length > 0;
       for (const entity of entityData.entities.slice(0, LIMITS.maxEntitiesPerSource)) addEntityToMap(entityMap, entity, source, isEvidence);
-    } catch (error) {
-      failedSources.push({ title:result.title || "", url:result.url, reason:error.message || "Unknown source error" });
-    }
+    } catch (error) { failedSources.push({ title:result.title || "", url:result.url, reason:error.message || "Unknown source error" }); }
   }
-
   const allEntities = [...entityMap.values()].map(entity => serializeEntity(entity, query));
   const rankedEntities = allEntities.sort((a,b) => b.score-a.score || b.evidenceCount-a.evidenceCount || b.sourceCount-a.sourceCount || b.confidence-a.confidence).slice(0, LIMITS.maxRankedEntities);
   const discoveries = rankedEntities.filter(entity => isUsefulDiscovery(entity, query)).map(entity => ({ type:entity.type, value:entity.value, normalized:entity.normalized, confidence:entity.confidence, score:entity.score, sourceCount:entity.sourceCount, evidenceCount:entity.evidenceCount, sources:entity.sources })).slice(0, LIMITS.maxDiscoveries);
   const metadata = allEntities.filter(entity => METADATA_TYPES.has(entity.type)).sort((a,b) => b.score-a.score).slice(0, LIMITS.maxRankedEntities);
-
   return { query, depth, search:{ provider:searchData.provider, instance:searchData.instance, attemptedProviders:searchData.attemptedProviders || [searchData.provider], attemptedInstances:searchData.attemptedInstances || [], resultCount:searchData.results.length, processedCount:searchResults.length }, sources:{ successful:pages, failed:failedSources, successfulCount:pages.length, failedCount:failedSources.length }, entities:rankedEntities, discoveries, metadata };
+}
+
+function buildReport(investigations, query, state, depth, startedAt) {
+  const root = investigations[0] || null;
+  const people = [];
+  const organisations = [];
+  const locations = [];
+  const accounts = [];
+  const evidence = [];
+  const seen = new Set();
+  for (const item of investigations) {
+    for (const e of item.entities || []) {
+      if (!e.evidenceCount) continue;
+      const key = `${e.type}:${e.normalized}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const compact = { value:e.value, score:e.score, sources:e.sourceCount };
+      if (e.type === "person_candidate") people.push(compact);
+      else if (e.type === "organisation_candidate") organisations.push(compact);
+      else if (e.type === "location_candidate") locations.push(compact);
+      else if (["username","email","phone"].includes(e.type)) accounts.push({ type:e.type, ...compact });
+      if (["person_candidate","organisation_candidate","location_candidate","username","email","phone"].includes(e.type)) evidence.push({ type:e.type, value:e.value, score:e.score, sources:e.sources.filter(s=>s.evidence).slice(0,3).map(s=>({title:s.title,url:s.url})) });
+    }
+  }
+  const unique = arr => arr.sort((a,b)=>(b.score||0)-(a.score||0)).slice(0,10);
+  const sourceList = (root?.sources?.successful || []).map(s=>({title:s.title,url:s.url,status:s.httpStatus,textLength:s.textLength}));
+  return {
+    status:"success",
+    query,
+    subject: people[0]?.value || query,
+    confidence: people[0]?.score || 0,
+    summary:{ people:unique(people), organisations:unique(organisations), locations:unique(locations), accounts:unique(accounts) },
+    evidence:evidence.slice(0,20),
+    sources:sourceList,
+    stats:{ searchResults:root?.search?.resultCount || 0, pagesRead:state.pagesProcessed, investigations:investigations.length, evidenceItems:evidence.length, durationMs:Date.now()-startedAt },
+    limits:LIMITS,
+    depth
+  };
 }
 
 async function investigate(request, env) {
@@ -152,7 +162,6 @@ async function investigate(request, env) {
   const startedAt = Date.now();
   const state = { visitedQueries:new Set(), searchRequests:0, pagesProcessed:0 };
   const queue = [{ query, depth:0, parent:null }], investigations = [], queued = new Set([normalize(query)]);
-
   try {
     while (queue.length && investigations.length < LIMITS.maxQueueItems && state.searchRequests < LIMITS.maxSearchRequests) {
       const item = queue.shift();
@@ -168,29 +177,12 @@ async function investigate(request, env) {
         queue.push({ query:discovery.value, depth:item.depth+1, parent:result.query });
       }
     }
-
-    const root = investigations[0] || null;
-    const uniqueDiscoveryMap = new Map();
-    for (const item of investigations) for (const discovery of item.discoveries) {
-      const key = `${discovery.type}:${normalize(discovery.normalized || discovery.value)}`;
-      const existing = uniqueDiscoveryMap.get(key);
-      if (!existing || discovery.score > existing.score) uniqueDiscoveryMap.set(key,{ ...discovery, depth:item.depth, discoveredFrom:item.query });
-    }
-
-    return Response.json({ status:"success", query, limits:LIMITS, depth, providerRequested:requestedProvider || env.SEARCH_PROVIDER || "auto", search:root?.search || { provider:"none", attemptedProviders:[], attemptedInstances:[], resultCount:0, processedCount:0 }, sources:root?.sources || { successful:[], failed:[], successfulCount:0, failedCount:0 }, entityCount:root?.entities?.length || 0, entities:root?.entities || [], discoveryCount:uniqueDiscoveryMap.size, discoveries:[...uniqueDiscoveryMap.values()].sort((a,b)=>b.score-a.score).slice(0,LIMITS.maxDiscoveries), metadata:root?.metadata || [], queue:{ requestedDepth:depth, investigationsRun:investigations.length, searchRequests:state.searchRequests, pagesProcessed:state.pagesProcessed, queuedRemaining:queue.length, visitedQueries:[...state.visitedQueries] }, investigations:investigations.slice(0,LIMITS.maxQueueItems), timing:{ durationMs:Date.now()-startedAt } });
-  } catch (error) {
-    return Response.json({ status:"error", message:error.message, query, providerRequested:requestedProvider || env.SEARCH_PROVIDER || "auto" },{ status:502 });
-  }
+    return Response.json(buildReport(investigations,query,state,depth,startedAt));
+  } catch (error) { return Response.json({ status:"error", message:error.message, query, providerRequested:requestedProvider || env.SEARCH_PROVIDER || "auto" },{ status:502 }); }
 }
 
 export default { async fetch(request,env,ctx) {
   const url = new URL(request.url);
-  if (url.pathname === "/search") {
-    const query = url.searchParams.get("q")?.trim();
-    if (!query) return Response.json({ status:"error", error:"Missing search query", usage:"/search?q=keyword" },{ status:400 });
-    try { return Response.json({ status:"success", ...(await search(query,env,url.searchParams.get("provider")?.trim().toLowerCase() || null)) }); }
-    catch (error) { return Response.json({ status:"error", message:error.message },{ status:502 }); }
-  }
   if (url.pathname === "/investigate") return investigate(request,env);
   return import("./index.js").then(module => module.default.fetch(request,env,ctx));
 } };
