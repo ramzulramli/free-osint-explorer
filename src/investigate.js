@@ -167,13 +167,21 @@ function buildPivotQueries(subject, accounts, organisations) {
   return queries.slice(0, LIMITS.maxQueueItems);
 }
 
-async function investigateQuery(query, state, env, provider, depth) {
+async function investigateQuery(query, state, env, provider, depth, { fatal = false } = {}) {
   const normalizedQuery = normalize(query);
   if (!normalizedQuery || state.visited.has(normalizedQuery) || state.searchRequests >= LIMITS.maxSearchRequests) return null;
   state.visited.add(normalizedQuery);
   state.searchRequests += 1;
 
-  const searchData = await search(query, env, provider);
+  let searchData;
+  try {
+    searchData = await search(query, env, provider);
+  } catch (error) {
+    if (fatal) throw error;
+    state.skippedSearches.push({ query, depth, reason: error.message || "Search failed" });
+    return null;
+  }
+
   const results = Array.isArray(searchData.results) ? searchData.results.slice(0, LIMITS.maxSearchResults) : [];
   const entityMap = new Map();
   const successful = [];
@@ -252,7 +260,8 @@ function report(investigations, state, query, depth, startedAt) {
     summary: { people: sort(people), organisations: sort(organisations), locations: sort(locations), accounts: sort(accounts) },
     evidence: evidence.slice(0, 20),
     sources: [...allSources.values()].map(s => ({ title: s.title, url: s.url, status: s.httpStatus, textLength: s.textLength })),
-    stats: { searchResults: investigations[0]?.search?.resultCount || 0, pagesRead: state.pagesRead, investigations: investigations.length, evidenceItems: evidence.length, searchRequests: state.searchRequests, durationMs: Date.now() - startedAt },
+    stats: { searchResults: investigations[0]?.search?.resultCount || 0, pagesRead: state.pagesRead, investigations: investigations.length, evidenceItems: evidence.length, searchRequests: state.searchRequests, skippedSearches: state.skippedSearches.length, durationMs: Date.now() - startedAt },
+    skippedSearches: state.skippedSearches,
     limits: LIMITS,
     depth
   };
@@ -267,10 +276,10 @@ async function investigate(request, env) {
   const depth = Number.isFinite(requestedDepth) ? Math.max(0, Math.min(LIMITS.maxDepth, requestedDepth)) : 1;
   const provider = url.searchParams.get("provider")?.trim().toLowerCase() || null;
   const startedAt = Date.now();
-  const state = { visited: new Set(), searchRequests: 0, pagesRead: 0, subject: query };
+  const state = { visited: new Set(), searchRequests: 0, pagesRead: 0, subject: query, skippedSearches: [] };
   const investigations = [];
 
-  const root = await investigateQuery(query, state, env, provider, 0);
+  const root = await investigateQuery(query, state, env, provider, 0, { fatal: true });
   if (root) investigations.push(root);
 
   // Automatically pivot from discovered accounts / organisation relationships.
@@ -311,7 +320,7 @@ export default {
 
     if (url.pathname === "/investigate") {
       try { return Response.json(await investigate(request, env)); }
-      catch (error) { return Response.json({ status: "error", message: error.message || "Investigation failed" }, { status: 502 }); }
+      catch (error) { return Response.json({ status: "error", message: error.message || "Investigation failed" }); }
     }
 
     return Response.json({ status: "error", error: "Not found" }, { status: 404 });
