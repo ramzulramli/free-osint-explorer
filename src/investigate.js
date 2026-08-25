@@ -3,7 +3,7 @@ import { search } from "./search.js";
 
 const LIMITS = {
   maxSearchResults: 5,
-  maxPages: 3,
+  maxPages: 5,
   maxEntitiesPerSource: 50,
   maxRankedEntities: 50,
   maxDiscoveries: 25,
@@ -53,10 +53,30 @@ function scoreEntity(entity, seedQuery) {
   return Number(Math.min(1, confidence*.50 + sourceBoost*.20 + evidenceBoost*.20 + (typeWeights[entity.type] || .25)*.10 + seedMatch*.10).toFixed(4));
 }
 
+function extractSearchResultEntities(result) {
+  const title = String(result.title || "").trim();
+  const snippet = String(result.snippet || "").trim();
+  const text = `${title}. ${snippet}`.trim();
+  const entities = extractEntityCandidates(text);
+
+  // LinkedIn often blocks direct fetching, but its search title can still
+  // expose a useful employment relationship such as "Person - Company | LinkedIn".
+  if (/\blinkedin\b/i.test(title)) {
+    const match = title.match(/\s[-–—]\s+([^|]+?)\s*\|\s*LinkedIn/i);
+    if (match) {
+      const organisation = match[1].replace(/\s+/g, " ").trim();
+      if (organisation && organisation.length >= 2 && organisation.length <= 100) {
+        entities.push({ type:"organisation_candidate", value:organisation, normalized:normalize(organisation), confidence:.78, evidence:"Organisation identified from LinkedIn search-result title" });
+      }
+    }
+  }
+  return entities;
+}
+
 async function fetchEntities(url) {
   const targetUrl = new URL(url);
   if (!["http:", "https:"].includes(targetUrl.protocol)) throw new Error("Only HTTP and HTTPS URLs are allowed");
-  const response = await fetch(targetUrl.toString(), { headers:{ "User-Agent":"Mozilla/5.0 (compatible; FreeOSINTExplorer/0.6)" } });
+  const response = await fetch(targetUrl.toString(), { headers:{ "User-Agent":"Mozilla/5.0 (compatible; FreeOSINTExplorer/0.7)" } });
   if (!response.ok) throw new Error(`Target returned HTTP ${response.status}`);
   const html = await response.text();
   const title = extractTitle(html), text = extractReadableText(html), entities = extractEntityCandidates(text);
@@ -97,10 +117,18 @@ async function investigateQuery(query, depth, state, env, requestedProvider) {
   const searchData = await search(query, env, requestedProvider);
   const searchResults = Array.isArray(searchData.results) ? searchData.results.slice(0, LIMITS.maxSearchResults) : [];
   const pages = [], failedSources = [], entityMap = new Map();
-  for (const result of searchResults.slice(0, LIMITS.maxPages)) {
+
+  // Search-result titles/snippets are evidence too. This preserves useful
+  // relationships when a target page blocks automated fetching.
+  for (const result of searchResults) {
     const resultSource = { title:result.title || "Search result", url:result.url, httpStatus:null, textLength:0 };
-    const resultText = `${result.title || ""}. ${result.snippet || ""}`.trim();
-    if (resultText) for (const entity of extractEntityCandidates(resultText).slice(0, LIMITS.maxEntitiesPerSource)) addEntityToMap(entityMap, entity, resultSource, false);
+    for (const entity of extractSearchResultEntities(result).slice(0, LIMITS.maxEntitiesPerSource)) {
+      addEntityToMap(entityMap, entity, resultSource, true);
+    }
+  }
+
+  // Read all five search results rather than only the first three.
+  for (const result of searchResults.slice(0, LIMITS.maxPages)) {
     state.pagesProcessed += 1;
     try {
       const entityData = await fetchEntities(result.url);
@@ -135,9 +163,6 @@ function buildReport(investigations, query, state, depth, startedAt) {
       else if (e.type === "location_candidate") locations.push(compact);
       else if (["username","email","phone"].includes(e.type)) accounts.push({ type:e.type, ...compact });
 
-      // Only promote person candidates that pass the same quality filter used by discoveries.
-      // This prevents page labels such as "Certified Tester" and "Certification Number"
-      // from leaking into the public-facing evidence section.
       const usefulForEvidence = e.type !== "person_candidate" || isUsefulPerson(e, query);
       if (usefulForEvidence && ["person_candidate","organisation_candidate","location_candidate","username","email","phone"].includes(e.type)) {
         evidence.push({ type:e.type, value:e.value, score:e.score, sources:e.sources.filter(s=>s.evidence).slice(0,3).map(s=>({title:s.title,url:s.url})) });
