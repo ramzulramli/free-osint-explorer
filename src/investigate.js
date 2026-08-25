@@ -20,6 +20,11 @@ const PERSON_NOISE = new Set([
   "malaysia", "selangor", "company", "profile", "page", "directory"
 ]);
 
+const NON_PROFILE_PATHS = new Set([
+  "home", "search", "explore", "login", "signup", "settings", "directory", "jobs",
+  "feed", "notifications", "messages", "watch", "status", "share", "intent", "i"
+]);
+
 function normalize(value) { return String(value || "").replace(/\s+/g, " ").trim().toLowerCase(); }
 
 function cleanUrl(url) {
@@ -52,14 +57,41 @@ function accountFromUrl(url, title = "") {
     const platform = PROFILE_HOSTS.get(host);
     if (!platform) return null;
     const path = u.pathname.replace(/^\/+|\/+$/g, "");
+    const parts = path.split("/").filter(Boolean);
     let username = null;
-    if (platform === "LinkedIn") username = path.match(/^in\/([^/]+)/i)?.[1] || null;
-    else if (platform === "Shutterstock") username = path.match(/^g\/([^/]+)/i)?.[1] || null;
-    else if (platform === "YouTube") username = path.match(/^@?([^/]+)/i)?.[1] || path.match(/^(?:channel|user)\/([^/]+)/i)?.[1] || null;
-    else username = path.split("/")[0] || null;
-    if (!username) return null;
+
+    if (platform === "LinkedIn") {
+      username = parts[0]?.toLowerCase() === "in" ? parts[1] : null;
+    } else if (platform === "Shutterstock") {
+      username = parts[0]?.toLowerCase() === "g" ? parts[1] : null;
+    } else if (platform === "YouTube") {
+      if (parts[0]?.startsWith("@")) username = parts[0];
+      else if (["channel", "user", "c"].includes(parts[0]?.toLowerCase())) username = parts[1];
+    } else if (platform === "TikTok") {
+      username = parts[0]?.startsWith("@") ? parts[0] : null;
+    } else {
+      username = parts[0] || null;
+    }
+
+    if (!username || NON_PROFILE_PATHS.has(username.toLowerCase())) return null;
     username = username.replace(/^@/, "");
-    return { type: "account", platform, username, value: `${platform}: ${username}`, normalized: normalize(`${platform}:${username}`), confidence: 0.75, url: cleanUrl(u.toString()), title };
+    if (!username || username.length > 100) return null;
+
+    const titleText = normalize(title);
+    const usernameHit = titleText.includes(normalize(username));
+    const platformWeight = ["LinkedIn", "Shutterstock"].includes(platform) ? 0.85 : 0.75;
+    const confidence = usernameHit ? Math.min(0.95, platformWeight + 0.1) : platformWeight;
+
+    return {
+      type: "account",
+      platform,
+      username,
+      value: `${platform}: ${username}`,
+      normalized: normalize(`${platform}:${username}`),
+      confidence,
+      url: cleanUrl(u.toString()),
+      title
+    };
   } catch { return null; }
 }
 
