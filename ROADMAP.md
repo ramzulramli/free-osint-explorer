@@ -12,7 +12,7 @@ Status: COMPLETE
 
 ## Phase 1 — Search
 
-Status: INITIAL RELEVANCE VALIDATION WORKING
+Status: RELEVANCE VALIDATION WORKING
 
 - [x] `/search`
 - [x] DuckDuckGo provider
@@ -52,7 +52,7 @@ Status: COMPLETE (CORE)
 
 ## Phase 3 — Entity Extraction
 
-Status: INITIAL IMPLEMENTATION
+Status: INITIAL IMPLEMENTATION / ACCOUNT EXTRACTION WORKING
 
 - [x] Person candidates
 - [x] Organisation candidates
@@ -61,24 +61,28 @@ Status: INITIAL IMPLEMENTATION
 - [x] Dates/years
 - [x] Keywords
 - [x] Usernames
+- [x] Account/profile extraction
 - [x] Normalization/deduplication
 - [x] Basic confidence scoring
 - [x] Initial false-positive filtering
+- [x] Initial account relevance filtering
 - [ ] Better person/entity recognition
 - [ ] Better organisation filtering
 - [ ] Email extraction
 - [ ] Phone extraction with context
 - [ ] More language-aware extraction
 
+Latest investigation successfully identifies the strongest Shutterstock `ramzul` and LinkedIn `ramzul` profiles while suppressing previously observed unrelated Shutterstock accounts.
+
 ## Phase 4 — Discovery Intelligence
 
-Status: INITIAL IMPLEMENTATION / RETEST READY
+Status: WORKING / REFINEMENT NEEDED
 
 - [x] `/investigate`
 - [x] Seed search
 - [x] Controlled page reading
 - [x] Entity aggregation
-- [x] Duplicate prevention
+- [x] Duplicate prevention groundwork
 - [x] Relevance scoring groundwork
 - [x] Metadata separation
 - [x] Discovery filtering
@@ -87,17 +91,19 @@ Status: INITIAL IMPLEMENTATION / RETEST READY
 - [x] Investigation budgets
 - [x] Recursion depth control
 - [x] Initial search-result relevance scoring
+- [ ] Evidence/source provenance completeness
 - [ ] Better entity confidence
 - [ ] Source confidence
 - [ ] Related-query generation
 - [ ] Priority queue
 - [ ] Identity resolution
+- [ ] Cross-source corroboration model
 
-The next gate is to confirm that direct-search relevance improvements prevent contaminated pages from polluting `/investigate`.
+Latest successful test reached depth 1 with 5 investigations, 25 pages read, 5 search requests and no skipped searches.
 
 ## Phase 5 — Recursive Crawler
 
-Status: CONTROLLED INITIAL WORKFLOW / RETEST READY
+Status: CONTROLLED INITIAL WORKFLOW / DEPTH-1 TESTED
 
 - [x] Seed investigation
 - [x] Depth 0
@@ -106,6 +112,7 @@ Status: CONTROLLED INITIAL WORKFLOW / RETEST READY
 - [x] Page/search/entity/queue limits
 - [x] Visited-query tracking
 - [x] Search-provider fallback
+- [x] Controlled recursion execution
 - [ ] Golden identity investigation tests
 - [ ] Reliable multi-provider recursion testing
 - [ ] Relevance threshold refinement
@@ -189,13 +196,13 @@ Status: FUTURE
 
 ## Current Priority
 
-1. Deploy the latest GitHub code to Cloudflare.
-2. Test `/investigate` with `Ramzul Ramli`.
-3. Test `/investigate` with `Ramzul Mazwan Ramli`.
-4. Test `/investigate` with `Ramzulhakim Ramli` as the separate-person control case.
-5. Verify generic noise such as `control`, `windows` and `policy` no longer dominates the investigation.
-6. Refine identity and entity scoring.
-7. Strengthen controlled recursion.
+1. Preserve complete source/evidence provenance for every discovery.
+2. Remove generic page-title/UI fragments from person candidates.
+3. Consolidate duplicate discoveries across recursive investigations.
+4. Calibrate confidence so 1.00 does not imply certainty.
+5. Strengthen identity resolution using independent corroborating signals.
+6. Run the golden investigations: `Ramzul Ramli`, `Ramzul Mazwan Ramli`, `Ramzulhakim Ramli`.
+7. Only after those pass, increase recursion depth/budgets.
 8. Build relationship/graph structures.
 9. Build UI and reporting.
 
