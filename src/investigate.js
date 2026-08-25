@@ -15,7 +15,7 @@ const LIMITS = {
 
 const DISCOVERY_TYPES = new Set(["person_candidate", "organisation_candidate", "location_candidate", "email", "phone", "username", "url"]);
 const METADATA_TYPES = new Set(["date", "year", "keyword"]);
-const PERSON_NOISE_WORDS = new Set(["safety","how","home","watch","channel","video","videos","official","music","news","search","help","about","contact","privacy","policy","facebook","explore","email","password","log","messenger","lite","meta","pay","store","quest","ban","bahasa","indonesia","create","account","settings","login","signup","sign","terms","cookies","download","share"]);
+const PERSON_NOISE_WORDS = new Set(["safety","how","home","watch","channel","video","videos","official","music","news","search","help","about","contact","privacy","policy","facebook","explore","email","password","log","messenger","lite","meta","pay","store","quest","ban","bahasa","indonesia","create","account","settings","login","signup","sign","terms","cookies","download","share","certification","certified","tester","testing","number","member","board","software","malaysian","malaysia","profile","collection","collections","stock","image","images","photo","photos"]);
 const GENERIC_DISCOVERY_VALUES = new Set(["youtube","facebook","instagram","twitter","x","linkedin","tiktok","wikipedia","google","gmail","meta","facebook explore"]);
 
 function normalize(value) { return String(value || "").replace(/\s+/g, " ").trim().toLowerCase(); }
@@ -26,11 +26,13 @@ function isSeedComponent(value, seedQuery) {
   return candidateWords.every(word => seedWords.includes(word));
 }
 function isUsefulPerson(entity, seedQuery) {
-  const value = normalize(entity.value);
+  const raw = String(entity.value || "").replace(/\s+/g, " ").trim();
+  const value = normalize(raw);
   if (!value || GENERIC_DISCOVERY_VALUES.has(value)) return false;
-  const words = value.split(/\s+/).filter(Boolean);
-  if (words.length > 4 || value.length > 60) return false;
-  if (words.some(word => PERSON_NOISE_WORDS.has(word))) return false;
+  const words = raw.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 4 || value.length > 60) return false;
+  if (words.some(word => PERSON_NOISE_WORDS.has(normalize(word).replace(/[^a-z-]/g, "")))) return false;
+  if (!words.every(word => /^[\p{L}.'-]+$/u.test(word))) return false;
   return !isSeedComponent(value, seedQuery);
 }
 function isUsefulDiscovery(entity, seedQuery) {
@@ -117,20 +119,18 @@ async function investigateQuery(query, depth, state, env, requestedProvider) {
 
 function buildReport(investigations, query, state, depth, startedAt) {
   const root = investigations[0] || null;
-  const people = [];
-  const organisations = [];
-  const locations = [];
-  const accounts = [];
-  const evidence = [];
+  const people = [], organisations = [], locations = [], accounts = [], evidence = [];
   const seen = new Set();
+  const allSources = new Map();
   for (const item of investigations) {
+    for (const source of item.sources?.successful || []) allSources.set(source.url, source);
     for (const e of item.entities || []) {
       if (!e.evidenceCount) continue;
       const key = `${e.type}:${e.normalized}`;
       if (seen.has(key)) continue;
       seen.add(key);
       const compact = { value:e.value, score:e.score, sources:e.sourceCount };
-      if (e.type === "person_candidate") people.push(compact);
+      if (e.type === "person_candidate" && isUsefulPerson(e, query)) people.push(compact);
       else if (e.type === "organisation_candidate") organisations.push(compact);
       else if (e.type === "location_candidate") locations.push(compact);
       else if (["username","email","phone"].includes(e.type)) accounts.push({ type:e.type, ...compact });
@@ -138,7 +138,7 @@ function buildReport(investigations, query, state, depth, startedAt) {
     }
   }
   const unique = arr => arr.sort((a,b)=>(b.score||0)-(a.score||0)).slice(0,10);
-  const sourceList = (root?.sources?.successful || []).map(s=>({title:s.title,url:s.url,status:s.httpStatus,textLength:s.textLength}));
+  const sourceList = [...allSources.values()].map(s=>({title:s.title,url:s.url,status:s.httpStatus,textLength:s.textLength}));
   return {
     status:"success",
     query,
