@@ -13,251 +13,307 @@ const LIMITS = {
   maxVisitedQueries: 10
 };
 
-const DISCOVERY_TYPES = new Set(["person_candidate", "organisation_candidate", "location_candidate", "email", "phone", "username", "url"]);
-const METADATA_TYPES = new Set(["date", "year", "keyword"]);
-const PERSON_NOISE_WORDS = new Set(["safety","how","home","watch","channel","video","videos","official","music","news","search","help","about","contact","privacy","policy","facebook","explore","email","password","log","messenger","lite","meta","pay","store","quest","ban","bahasa","indonesia","create","account","settings","login","signup","sign","terms","cookies","download","share","certification","certified","tester","testing","number","member","board","software","malaysian","malaysia","profile","collection","collections","stock","image","images","photo","photos"]);
-const GENERIC_DISCOVERY_VALUES = new Set(["youtube","facebook","instagram","twitter","x","linkedin","tiktok","wikipedia","google","gmail","meta","facebook explore"]);
+const PROFILE_HOSTS = new Map([
+  ["linkedin.com", "LinkedIn"], ["my.linkedin.com", "LinkedIn"],
+  ["shutterstock.com", "Shutterstock"], ["www.shutterstock.com", "Shutterstock"],
+  ["facebook.com", "Facebook"], ["www.facebook.com", "Facebook"],
+  ["instagram.com", "Instagram"], ["www.instagram.com", "Instagram"],
+  ["x.com", "X"], ["twitter.com", "X"],
+  ["tiktok.com", "TikTok"], ["www.tiktok.com", "TikTok"],
+  ["youtube.com", "YouTube"], ["www.youtube.com", "YouTube"]
+]);
 
-function normalize(value) { return String(value || "").replace(/\s+/g, " ").trim().toLowerCase(); }
-function isSeedComponent(value, seedQuery) {
-  const seedWords = normalize(seedQuery).split(/\s+/).filter(word => word.length >= 3);
-  const candidateWords = normalize(value).split(/\s+/).filter(Boolean);
-  if (!candidateWords.length || !seedWords.length) return false;
-  return candidateWords.every(word => seedWords.includes(word));
+function normalize(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
-function isUsefulPerson(entity, seedQuery) {
-  const raw = String(entity.value || "").replace(/\s+/g, " ").trim();
-  const value = normalize(raw);
-  if (!value || GENERIC_DISCOVERY_VALUES.has(value)) return false;
-  const words = raw.split(/\s+/).filter(Boolean);
-  if (words.length < 2 || words.length > 4 || value.length > 60) return false;
-  if (words.some(word => PERSON_NOISE_WORDS.has(normalize(word).replace(/[^a-z-]/g, "")))) return false;
-  if (!words.every(word => /^[\p{L}.'-]+$/u.test(word))) return false;
-  return !isSeedComponent(value, seedQuery);
-}
-function isUsefulDiscovery(entity, seedQuery) {
+
+function isPerson(entity, seed) {
+  if (entity?.type !== "person_candidate") return false;
   const value = normalize(entity.value);
-  if (!value || GENERIC_DISCOVERY_VALUES.has(value)) return false;
-  if (entity.type === "person_candidate") return isUsefulPerson(entity, seedQuery);
-  if (METADATA_TYPES.has(entity.type)) return false;
-  if (entity.type === "url") return value.startsWith("http://") || value.startsWith("https://");
-  return DISCOVERY_TYPES.has(entity.type);
-}
-function scoreEntity(entity, seedQuery) {
-  const typeWeights = { email:1, phone:.95, username:.95, person_candidate:.85, organisation_candidate:.80, location_candidate:.65, url:.55 };
-  const confidence = Number(entity.confidence || 0);
-  const sourceBoost = Math.min(1, entity.sourceCount / 3);
-  const evidenceBoost = Math.min(1, (entity.evidenceCount || 0) / 3);
-  const seed = normalize(seedQuery), value = normalize(entity.value);
-  const seedMatch = seed && value && seed.includes(value) ? 1 : 0;
-  return Number(Math.min(1, confidence*.50 + sourceBoost*.20 + evidenceBoost*.20 + (typeWeights[entity.type] || .25)*.10 + seedMatch*.10).toFixed(4));
+  const words = value.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 5 || value.length > 80) return false;
+  const seedWords = new Set(normalize(seed).split(/\s+/));
+  return words.some(w => !seedWords.has(w));
 }
 
-function extractAccountFromUrl(url, title = "") {
+function accountFromUrl(url, title = "") {
   try {
-    const parsed = new URL(url);
-    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
-    const path = parsed.pathname.replace(/\/+$/, "");
-    let platform = null;
-    let username = null;
-    if (host === "linkedin.com" || host.endsWith(".linkedin.com")) {
-      platform = "LinkedIn";
-      const match = path.match(/^\/in\/([^/]+)/i);
-      username = match?.[1] || null;
-    } else if (host === "shutterstock.com" || host.endsWith(".shutterstock.com")) {
-      platform = "Shutterstock";
-      const match = path.match(/^\/g\/([^/]+)/i);
-      username = match?.[1] || null;
-    } else if (host === "facebook.com" || host.endsWith(".facebook.com")) {
-      platform = "Facebook";
-      username = path.split("/").filter(Boolean)[0] || null;
-    } else if (host === "instagram.com" || host.endsWith(".instagram.com")) {
-      platform = "Instagram";
-      username = path.split("/").filter(Boolean)[0] || null;
-    } else if (host === "x.com" || host === "twitter.com") {
-      platform = "X";
-      username = path.split("/").filter(Boolean)[0] || null;
-    } else if (host === "tiktok.com" || host.endsWith(".tiktok.com")) {
-      platform = "TikTok";
-      username = path.split("/").filter(Boolean)[0]?.replace(/^@/, "") || null;
-    } else if (host === "youtube.com" || host === "youtu.be") {
-      platform = "YouTube";
-      const match = path.match(/^\/@?([^/]+)/i) || path.match(/^\/channel\/([^/]+)/i) || path.match(/^\/user\/([^/]+)/i);
-      username = match?.[1] || null;
-    }
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase().replace(/^www\./, "");
+    const platform = PROFILE_HOSTS.get(host);
     if (!platform) return null;
-    const value = username ? `${platform}: ${username}` : platform;
-    return { type:"account", value, normalized:normalize(`${platform}:${username || ""}`), confidence:.75, platform, username, url:parsed.toString(), title };
+    const path = u.pathname.replace(/^\/+|\/+$/g, "");
+    let username = null;
+    if (platform === "LinkedIn") username = path.match(/^in\/([^/]+)/i)?.[1] || null;
+    else if (platform === "Shutterstock") username = path.match(/^g\/([^/]+)/i)?.[1] || null;
+    else if (platform === "YouTube") username = path.match(/^@?([^/]+)/i)?.[1] || path.match(/^(?:channel|user)\/([^/]+)/i)?.[1] || null;
+    else username = path.split("/")[0] || null;
+    if (!username) return null;
+    username = username.replace(/^@/, "");
+    return {
+      type: "account",
+      platform,
+      username,
+      value: `${platform}: ${username}`,
+      normalized: normalize(`${platform}:${username}`),
+      confidence: 0.75,
+      url: u.toString(),
+      title
+    };
   } catch { return null; }
 }
 
-function extractSearchResultEntities(result) {
+function add(map, entity, source, evidence = false) {
+  if (!entity?.type || !entity?.normalized) return;
+  const key = `${entity.type}:${normalize(entity.normalized)}`;
+  let item = map.get(key);
+  if (!item) {
+    item = {
+      type: entity.type,
+      value: entity.value,
+      normalized: entity.normalized,
+      confidence: Number(entity.confidence || 0),
+      platform: entity.platform || null,
+      username: entity.username || null,
+      sourceCount: 0,
+      evidenceCount: 0,
+      sources: []
+    };
+    map.set(key, item);
+  }
+  item.confidence = Math.max(item.confidence, Number(entity.confidence || 0));
+  if (!item.sources.some(s => s.url === source.url)) {
+    item.sourceCount += 1;
+    item.sources.push({
+      title: source.title || "",
+      url: source.url,
+      evidence: Boolean(evidence),
+      httpStatus: source.httpStatus ?? null,
+      textLength: source.textLength ?? 0
+    });
+    if (evidence) item.evidenceCount += 1;
+  } else if (evidence) {
+    const ref = item.sources.find(s => s.url === source.url);
+    if (ref) ref.evidence = true;
+  }
+}
+
+function score(entity, seed) {
+  const weights = { account: 1, email: 1, phone: .95, username: .9, person_candidate: .85, organisation_candidate: .8, location_candidate: .65 };
+  const sourceBoost = Math.min(1, entity.sourceCount / 3);
+  const evidenceBoost = Math.min(1, entity.evidenceCount / 3);
+  const exact = normalize(entity.value) === normalize(seed) ? 1 : 0;
+  return Number(Math.min(1, Number(entity.confidence || 0) * .5 + sourceBoost * .2 + evidenceBoost * .2 + (weights[entity.type] || .25) * .1 + exact * .1).toFixed(4));
+}
+
+function extractSearchEntities(result) {
   const title = String(result.title || "").trim();
   const snippet = String(result.snippet || "").trim();
-  const text = `${title}. ${snippet}`.trim();
-  const entities = extractEntityCandidates(text);
+  const entities = extractEntityCandidates(`${title}. ${snippet}`);
+  const account = accountFromUrl(result.url, title);
+  if (account) entities.push(account);
 
-  // LinkedIn often blocks direct fetching, but its search title can still
-  // expose a useful employment relationship such as "Person - Company | LinkedIn".
+  // LinkedIn search titles commonly contain "Person - Company | LinkedIn".
   if (/\blinkedin\b/i.test(title)) {
-    const match = title.match(/\s[-–—]\s+([^|]+?)\s*\|\s*LinkedIn/i);
-    if (match) {
-      const organisation = match[1].replace(/\s+/g, " ").trim();
-      if (organisation && organisation.length >= 2 && organisation.length <= 100) {
-        entities.push({ type:"organisation_candidate", value:organisation, normalized:normalize(organisation), confidence:.78, evidence:"Organisation identified from LinkedIn search-result title" });
+    const m = title.match(/\s[-–—]\s+([^|]+?)\s*\|\s*LinkedIn/i);
+    if (m?.[1]) {
+      const org = m[1].replace(/\s+/g, " ").trim();
+      if (org.length >= 2 && org.length <= 100) {
+        entities.push({ type: "organisation_candidate", value: org, normalized: normalize(org), confidence: .78 });
       }
     }
   }
-  const account = extractAccountFromUrl(result.url, title);
-  if (account) entities.push(account);
   return entities;
 }
 
-async function fetchEntities(url) {
-  const targetUrl = new URL(url);
-  if (!["http:", "https:"].includes(targetUrl.protocol)) throw new Error("Only HTTP and HTTPS URLs are allowed");
-  const response = await fetch(targetUrl.toString(), { headers:{ "User-Agent":"Mozilla/5.0 (compatible; FreeOSINTExplorer/0.7)" } });
-  if (!response.ok) throw new Error(`Target returned HTTP ${response.status}`);
-  const html = await response.text();
-  const title = extractTitle(html), text = extractReadableText(html), entities = extractEntityCandidates(text);
-  return { title, url:targetUrl.toString(), httpStatus:response.status, textLength:text.length, entities };
-}
-
-function addEntityToMap(entityMap, entity, source, isEvidence = false) {
-  if (!entity?.type || !entity?.normalized) return;
-  const key = `${entity.type}:${normalize(entity.normalized)}`;
-  const existing = entityMap.get(key);
-  if (existing) {
-    const sourceRef = existing.sources.find(ref => ref.url === source.url);
-    if (sourceRef) {
-      if (isEvidence) sourceRef.evidence = true;
-      if (source.httpStatus != null) sourceRef.httpStatus = source.httpStatus;
-      if (source.textLength > 0) sourceRef.textLength = source.textLength;
-      if (isEvidence && !existing.evidenceUrls.has(source.url)) { existing.evidenceCount += 1; existing.evidenceUrls.add(source.url); }
-    } else {
-      existing.sourceCount += 1;
-      existing.sources.push({ title:source.title, url:source.url, evidence:Boolean(isEvidence), httpStatus:source.httpStatus ?? null, textLength:source.textLength ?? 0 });
-      if (isEvidence && !existing.evidenceUrls.has(source.url)) { existing.evidenceCount += 1; existing.evidenceUrls.add(source.url); }
-    }
-    existing.confidence = Math.max(existing.confidence, Number(entity.confidence || 0));
-    return;
+async function fetchPage(url) {
+  try {
+    const target = new URL(url);
+    if (!["http:", "https:"].includes(target.protocol)) throw new Error("Only HTTP/HTTPS URLs are allowed");
+    const response = await fetch(target.toString(), { headers: { "User-Agent": "Mozilla/5.0 (compatible; FreeOSINTExplorer/0.8)" } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const html = await response.text();
+    const text = extractReadableText(html);
+    return {
+      ok: true,
+      title: extractTitle(html),
+      url: target.toString(),
+      httpStatus: response.status,
+      textLength: text.length,
+      entities: extractEntityCandidates(text),
+      account: accountFromUrl(target.toString(), extractTitle(html))
+    };
+  } catch (error) {
+    return { ok: false, url, error: error.message || "Fetch failed" };
   }
-  entityMap.set(key, { type:entity.type, value:entity.value, normalized:entity.normalized, confidence:Number(entity.confidence || 0), sourceCount:1, evidenceCount:isEvidence ? 1 : 0, evidenceUrls:new Set(isEvidence ? [source.url] : []), platform:entity.platform || null, username:entity.username || null, sources:[{ title:source.title, url:source.url, evidence:Boolean(isEvidence), httpStatus:source.httpStatus ?? null, textLength:source.textLength ?? 0 }] });
-}
-function serializeEntity(entity, seedQuery) {
-  const { evidenceUrls, ...safeEntity } = entity;
-  return { ...safeEntity, score:scoreEntity(entity, seedQuery) };
 }
 
-async function investigateQuery(query, depth, state, env, requestedProvider) {
-  const normalizedQuery = normalize(query);
-  if (!normalizedQuery || state.visitedQueries.has(normalizedQuery) || state.searchRequests >= LIMITS.maxSearchRequests) return null;
-  state.visitedQueries.add(normalizedQuery);
-  state.searchRequests += 1;
-  const searchData = await search(query, env, requestedProvider);
-  const searchResults = Array.isArray(searchData.results) ? searchData.results.slice(0, LIMITS.maxSearchResults) : [];
-  const pages = [], failedSources = [], entityMap = new Map();
-
-  // Search-result titles/snippets are evidence too. This preserves useful
-  // relationships when a target page blocks automated fetching.
-  for (const result of searchResults) {
-    const resultSource = { title:result.title || "Search result", url:result.url, httpStatus:null, textLength:0 };
-    for (const entity of extractSearchResultEntities(result).slice(0, LIMITS.maxEntitiesPerSource)) {
-      addEntityToMap(entityMap, entity, resultSource, true);
-    }
-  }
-
-  // Read all five search results rather than only the first three.
-  for (const result of searchResults.slice(0, LIMITS.maxPages)) {
-    state.pagesProcessed += 1;
-    try {
-      const entityData = await fetchEntities(result.url);
-      const source = { title:entityData.title || result.title || "", url:result.url, httpStatus:entityData.httpStatus, textLength:entityData.textLength || 0, entityCount:entityData.entities.length };
-      pages.push(source);
-      const isEvidence = entityData.textLength > 0 && entityData.entities.length > 0;
-      for (const entity of entityData.entities.slice(0, LIMITS.maxEntitiesPerSource)) addEntityToMap(entityMap, entity, source, isEvidence);
-      const fetchedAccount = extractAccountFromUrl(result.url, source.title);
-      if (fetchedAccount) addEntityToMap(entityMap, fetchedAccount, source, isEvidence);
-    } catch (error) { failedSources.push({ title:result.title || "", url:result.url, reason:error.message || "Unknown source error" }); }
-  }
-  const allEntities = [...entityMap.values()].map(entity => serializeEntity(entity, query));
-  const rankedEntities = allEntities.sort((a,b) => b.score-a.score || b.evidenceCount-a.evidenceCount || b.sourceCount-a.sourceCount || b.confidence-a.confidence).slice(0, LIMITS.maxRankedEntities);
-  const discoveries = rankedEntities.filter(entity => isUsefulDiscovery(entity, query)).map(entity => ({ type:entity.type, value:entity.value, normalized:entity.normalized, confidence:entity.confidence, score:entity.score, sourceCount:entity.sourceCount, evidenceCount:entity.evidenceCount, sources:entity.sources })).slice(0, LIMITS.maxDiscoveries);
-  const metadata = allEntities.filter(entity => METADATA_TYPES.has(entity.type)).sort((a,b) => b.score-a.score).slice(0, LIMITS.maxRankedEntities);
-  return { query, depth, search:{ provider:searchData.provider, instance:searchData.instance, attemptedProviders:searchData.attemptedProviders || [searchData.provider], attemptedInstances:searchData.attemptedInstances || [], resultCount:searchData.results.length, processedCount:searchResults.length }, sources:{ successful:pages, failed:failedSources, successfulCount:pages.length, failedCount:failedSources.length }, entities:rankedEntities, discoveries, metadata };
-}
-
-function buildReport(investigations, query, state, depth, startedAt) {
-  const root = investigations[0] || null;
-  const people = [], organisations = [], locations = [], accounts = [], evidence = [];
+function buildPivotQueries(subject, accounts, organisations) {
+  const queries = [];
   const seen = new Set();
-  const allSources = new Map();
-  for (const item of investigations) {
-    for (const source of item.sources?.successful || []) allSources.set(source.url, source);
-    for (const e of item.entities || []) {
-      if (!e.evidenceCount) continue;
-      const key = `${e.type}:${e.normalized}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const compact = { value:e.value, score:e.score, sources:e.sourceCount };
-      if (e.type === "person_candidate" && isUsefulPerson(e, query)) people.push(compact);
-      else if (e.type === "organisation_candidate") organisations.push(compact);
-      else if (e.type === "location_candidate") locations.push(compact);
-      else if (["username","email","phone"].includes(e.type)) accounts.push({ type:e.type, ...compact });
-      else if (e.type === "account") accounts.push({ type:"profile", platform:e.platform, username:e.username, url:e.sources?.[0]?.url, ...compact });
+  const push = q => {
+    const n = normalize(q);
+    if (!n || seen.has(n)) return;
+    seen.add(n); queries.push(q);
+  };
 
-      const usefulForEvidence = e.type !== "person_candidate" || isUsefulPerson(e, query);
-      if (usefulForEvidence && ["person_candidate","organisation_candidate","location_candidate","username","email","phone","account"].includes(e.type)) {
-        evidence.push({ type:e.type, value:e.value, score:e.score, sources:e.sources.filter(s=>s.evidence).slice(0,3).map(s=>({title:s.title,url:s.url})) });
+  // High-value pivots first: discovered accounts, then employment/org context.
+  for (const account of accounts.slice(0, 3)) {
+    push(`"${subject}" ${account.platform}`);
+    if (account.platform === "LinkedIn") push(`site:linkedin.com/in "${subject}"`);
+    if (account.platform === "Shutterstock") push(`site:shutterstock.com/g/ "${account.username}"`);
+  }
+  for (const org of organisations.slice(0, 2)) push(`"${subject}" "${org.value}"`);
+  return queries.slice(0, LIMITS.maxQueueItems);
+}
+
+async function investigateQuery(query, state, env, provider, depth) {
+  const normalizedQuery = normalize(query);
+  if (!normalizedQuery || state.visited.has(normalizedQuery) || state.searchRequests >= LIMITS.maxSearchRequests) return null;
+  state.visited.add(normalizedQuery);
+  state.searchRequests += 1;
+
+  const searchData = await search(query, env, provider);
+  const results = Array.isArray(searchData.results) ? searchData.results.slice(0, LIMITS.maxSearchResults) : [];
+  const entityMap = new Map();
+  const successful = [];
+  const failed = [];
+
+  for (const result of results) {
+    const source = { title: result.title || "Search result", url: result.url, httpStatus: null, textLength: 0 };
+    for (const entity of extractSearchEntities(result).slice(0, LIMITS.maxEntitiesPerSource)) add(entityMap, entity, source, true);
+  }
+
+  for (const result of results.slice(0, LIMITS.maxPages)) {
+    state.pagesRead += 1;
+    const page = await fetchPage(result.url);
+    if (!page.ok) {
+      failed.push({ title: result.title || "", url: result.url, reason: page.error });
+      continue;
+    }
+    const source = { title: page.title || result.title || "", url: page.url, httpStatus: page.httpStatus, textLength: page.textLength };
+    successful.push(source);
+    const evidence = page.textLength > 0 && page.entities.length > 0;
+    for (const entity of page.entities.slice(0, LIMITS.maxEntitiesPerSource)) add(entityMap, entity, source, evidence);
+    if (page.account) add(entityMap, page.account, source, evidence);
+  }
+
+  const entities = [...entityMap.values()].map(e => ({ ...e, score: score(e, state.subject) }))
+    .sort((a, b) => b.score - a.score || b.evidenceCount - a.evidenceCount || b.sourceCount - a.sourceCount)
+    .slice(0, LIMITS.maxRankedEntities);
+
+  return {
+    query,
+    depth,
+    search: {
+      provider: searchData.provider,
+      instance: searchData.instance,
+      attemptedProviders: searchData.attemptedProviders || [searchData.provider],
+      attemptedInstances: searchData.attemptedInstances || [],
+      resultCount: searchData.results?.length || 0,
+      processedCount: results.length
+    },
+    sources: { successful, failed, successfulCount: successful.length, failedCount: failed.length },
+    entities
+  };
+}
+
+function report(investigations, state, query, depth, startedAt) {
+  const people = new Map(), organisations = new Map(), locations = new Map(), accounts = new Map(), evidence = [];
+  const allSources = new Map();
+  const addCompact = (map, e, extra = {}) => {
+    const key = `${e.type}:${e.normalized}`;
+    if (!map.has(key)) map.set(key, { ...extra, value: e.value, score: e.score, sources: e.sourceCount });
+  };
+
+  for (const inv of investigations) {
+    for (const source of inv.sources.successful) allSources.set(source.url, source);
+    for (const e of inv.entities) {
+      if (!e.evidenceCount) continue;
+      if (e.type === "person_candidate" && isPerson(e, query)) addCompact(people, e);
+      else if (e.type === "organisation_candidate") addCompact(organisations, e);
+      else if (e.type === "location_candidate") addCompact(locations, e);
+      else if (e.type === "account") addCompact(accounts, e, { type: "profile", platform: e.platform, username: e.username, url: e.sources?.[0]?.url });
+      else if (["username", "email", "phone"].includes(e.type)) addCompact(accounts, e, { type: e.type });
+
+      if (["person_candidate", "organisation_candidate", "location_candidate", "account", "username", "email", "phone"].includes(e.type)) {
+        evidence.push({ type: e.type, value: e.value, score: e.score, sources: e.sources.filter(s => s.evidence).slice(0, 3).map(s => ({ title: s.title, url: s.url })) });
       }
     }
   }
-  const unique = arr => arr.sort((a,b)=>(b.score||0)-(a.score||0)).slice(0,10);
-  const sourceList = [...allSources.values()].map(s=>({title:s.title,url:s.url,status:s.httpStatus,textLength:s.textLength}));
+
+  const sort = map => [...map.values()].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 10);
+  const topPerson = sort(people)[0];
   return {
-    status:"success",
+    status: "success",
     query,
-    subject: people[0]?.value || query,
-    confidence: people[0]?.score || 0,
-    summary:{ people:unique(people), organisations:unique(organisations), locations:unique(locations), accounts:unique(accounts) },
-    evidence:evidence.slice(0,20),
-    sources:sourceList,
-    stats:{ searchResults:root?.search?.resultCount || 0, pagesRead:state.pagesProcessed, investigations:investigations.length, evidenceItems:evidence.length, durationMs:Date.now()-startedAt },
-    limits:LIMITS,
+    subject: state.subject || topPerson?.value || query,
+    confidence: topPerson?.score || 0,
+    summary: { people: sort(people), organisations: sort(organisations), locations: sort(locations), accounts: sort(accounts) },
+    evidence: evidence.slice(0, 20),
+    sources: [...allSources.values()].map(s => ({ title: s.title, url: s.url, status: s.httpStatus, textLength: s.textLength })),
+    stats: { searchResults: investigations[0]?.search?.resultCount || 0, pagesRead: state.pagesRead, investigations: investigations.length, evidenceItems: evidence.length, searchRequests: state.searchRequests, durationMs: Date.now() - startedAt },
+    limits: LIMITS,
     depth
   };
 }
 
 async function investigate(request, env) {
-  const url = new URL(request.url), query = url.searchParams.get("q")?.trim();
-  if (!query) return Response.json({ status:"error", error:"Missing search query", usage:"/investigate?q=keyword" }, { status:400 });
-  const requestedDepth = Number.parseInt(url.searchParams.get("depth") || "0",10);
-  const depth = Number.isFinite(requestedDepth) ? Math.max(0,Math.min(LIMITS.maxDepth,requestedDepth)) : 0;
-  const requestedProvider = url.searchParams.get("provider")?.trim().toLowerCase() || null;
+  const url = new URL(request.url);
+  const query = url.searchParams.get("q")?.trim();
+  if (!query) return Response.json({ status: "error", error: "Missing search query", usage: "/investigate?q=keyword" }, { status: 400 });
+
+  const requestedDepth = Number.parseInt(url.searchParams.get("depth") || "1", 10);
+  const depth = Number.isFinite(requestedDepth) ? Math.max(0, Math.min(LIMITS.maxDepth, requestedDepth)) : 1;
+  const provider = url.searchParams.get("provider")?.trim().toLowerCase() || null;
   const startedAt = Date.now();
-  const state = { visitedQueries:new Set(), searchRequests:0, pagesProcessed:0 };
-  const queue = [{ query, depth:0, parent:null }], investigations = [], queued = new Set([normalize(query)]);
-  try {
-    while (queue.length && investigations.length < LIMITS.maxQueueItems && state.searchRequests < LIMITS.maxSearchRequests) {
-      const item = queue.shift();
-      const result = await investigateQuery(item.query,item.depth,state,env,requestedProvider);
-      if (!result) continue;
-      investigations.push({ ...result, parent:item.parent });
-      if (item.depth >= depth) continue;
-      for (const discovery of result.discoveries) {
-        if (queue.length >= LIMITS.maxQueueItems || state.searchRequests + queue.length >= LIMITS.maxSearchRequests) break;
-        const normalizedNext = normalize(discovery.value);
-        if (!normalizedNext || queued.has(normalizedNext) || state.visitedQueries.has(normalizedNext)) continue;
-        queued.add(normalizedNext);
-        queue.push({ query:discovery.value, depth:item.depth+1, parent:result.query });
-      }
+  const state = { visited: new Set(), searchRequests: 0, pagesRead: 0, subject: query };
+  const investigations = [];
+
+  const root = await investigateQuery(query, state, env, provider, 0);
+  if (root) investigations.push(root);
+
+  // Automatically pivot from discovered accounts / organisation relationships.
+  if (depth > 0 && root && state.searchRequests < LIMITS.maxSearchRequests) {
+    const accountEntities = root.entities.filter(e => e.type === "account" && e.username);
+    const organisationEntities = root.entities.filter(e => e.type === "organisation_candidate");
+    const person = root.entities.find(e => e.type === "person_candidate" && normalize(e.value) === normalize(query))
+      || root.entities.find(e => e.type === "person_candidate");
+    if (person) state.subject = person.value;
+
+    const pivots = buildPivotQueries(state.subject, accountEntities, organisationEntities);
+    for (const pivot of pivots) {
+      if (state.searchRequests >= LIMITS.maxSearchRequests) break;
+      const inv = await investigateQuery(pivot, state, env, provider, 1);
+      if (inv) investigations.push(inv);
     }
-    return Response.json(buildReport(investigations,query,state,depth,startedAt));
-  } catch (error) { return Response.json({ status:"error", message:error.message, query, providerRequested:requestedProvider || env.SEARCH_PROVIDER || "auto" },{ status:502 }); }
+  }
+
+  return report(investigations, state, query, depth, startedAt);
 }
 
-export default { async fetch(request,env,ctx) {
-  const url = new URL(request.url);
-  if (url.pathname === "/investigate") return investigate(request,env);
-  return import("./index.js").then(module => module.default.fetch(request,env,ctx));
-} };
+export { investigate };
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname === "/") return Response.json({ name: "Free OSINT Explorer", status: "online", version: "0.8.0", endpoints: ["/search", "/investigate"] });
+
+    if (url.pathname === "/search") {
+      const query = url.searchParams.get("q")?.trim();
+      if (!query) return Response.json({ status: "error", error: "Missing search query", usage: "/search?q=keyword" }, { status: 400 });
+      try {
+        return Response.json({ status: "success", ...(await search(query, env, url.searchParams.get("provider")?.trim().toLowerCase() || null)) });
+      } catch (error) {
+        return Response.json({ status: "error", message: error.message }, { status: 502 });
+      }
+    }
+
+    if (url.pathname === "/investigate") {
+      try { return Response.json(await investigate(request, env)); }
+      catch (error) { return Response.json({ status: "error", message: error.message || "Investigation failed" }, { status: 502 }); }
+    }
+
+    return Response.json({ status: "error", error: "Not found" }, { status: 404 });
+  }
+};
