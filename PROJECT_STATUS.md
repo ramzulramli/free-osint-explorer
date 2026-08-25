@@ -35,17 +35,12 @@ Current behaviour:
 - Provider and attempted-provider information is returned.
 
 Testing:
-- DuckDuckGo is currently unreliable from the Worker because of bot/challenge responses.
-- SearXNG fallback works.
-- `Ramzul Ramli` returns relevant Facebook, Instagram, YouTube and other matching results, plus the full-name LinkedIn result for `Ramzul Mazwan Ramli`.
-- `Ramzul Mazwan Ramli` returns the full-name LinkedIn, Shutterstock and MSTB results.
-- `Ramzulhakim Ramli` returns results belonging to the separate known person.
-- `Ramzulhakim Ramli` is retained as a lower-relevance `compound_name_partial` candidate when it appears in a broader `Ramzul Ramli` search; it is not treated as the same identity.
-- A generic `Microsoft Windows` query returns Windows-related results.
+- DuckDuckGo remains unreliable from the Worker because of bot/challenge responses.
+- SearXNG fallback works, but individual public instances can fail or return poor/no results and must be treated as untrusted providers.
+- Direct relevance filtering successfully removed the earlier generic Microsoft/AppLocker contamination observed during `Ramzul Ramli` testing.
+- Full-name and public-name searches now consistently surface the test subject's LinkedIn, Shutterstock and MSTB pages.
 
-The earlier failure mode where a valid SearXNG response contained unrelated Microsoft/AppLocker pages is now addressed at the `/search` result-ranking/filtering layer.
-
-Status: **SEARCH PROVIDER + INITIAL RELEVANCE VALIDATION WORKING**
+Status: **SEARCH PROVIDER + RELEVANCE VALIDATION WORKING**
 
 ### `/fetch`
 
@@ -74,7 +69,7 @@ Controlled recursive workflow:
 
 Current limits:
 - Search results: 5
-- Pages: 3
+- Pages: 5
 - Entities/source: 50
 - Ranked entities: 50
 - Discoveries: 25
@@ -83,9 +78,25 @@ Current limits:
 - Search requests: 5
 - Visited queries: 10
 
-Earlier `/investigate` testing showed that unrelated search results could contaminate entity extraction. Direct `/search` relevance filtering is now in place, so the next step is to retest `/investigate` using the identity-resolution golden tests before increasing recursion budgets.
+### Latest investigation test
 
-Status: **CONTROLLED WORKFLOW READY FOR RETEST**
+Latest successful test query: `Ramzul Mazwan Ramli`
+
+Observed result:
+- Overall confidence: **1.00**
+- Primary identity: `Ramzul Mazwan bin Ramli` (score 1.00 / 5 sources in summary)
+- `Ramzul Mazwan Ramli` also appears as a person candidate (0.6183 / 1 source)
+- Organisations: `Telekom Malaysia` (0.6033) and `United Nations` (0.6033)
+- Locations: `Malaysia` (0.7567), `Selangor` (0.6233)
+- Accounts: `Shutterstock: ramzul` (0.975 / 3 sources), `LinkedIn: ramzul` (0.7083 / 1 source)
+- The earlier false-positive Shutterstock accounts `Ramzul Alam` / `Mohd Ramzul b. Abdul Alam` are no longer present in the latest summary, indicating the account filtering improved.
+- `Shutterstock: ramzul` is strongly corroborated by three profile/portfolio URLs.
+- The result reached depth 1 with 5 investigations, 25 pages read, 5 search requests and no skipped searches.
+- `sources` currently exposes the MSTB page as the top source record even though the evidence set contains additional LinkedIn and Shutterstock sources; this is a reporting/data-shape issue to improve later.
+
+Important caveat:
+- `United Nations` appears as an organisation candidate in the latest result, but the supplied evidence excerpt does not show its supporting source. It should therefore be treated as an unverified discovery until source attribution is preserved and inspected.
+- Confidence `1.00` currently reflects the scoring model, not proof of real-world identity. It must not be interpreted as certainty.
 
 ## Identity-resolution golden test
 
@@ -100,11 +111,11 @@ The engine must never merge people solely because names are similar. Search rele
 
 ```text
 Phase 0  Infrastructure         COMPLETE
-Phase 1  Search                 INITIAL RELEVANCE VALIDATION WORKING
+Phase 1  Search                 RELEVANCE VALIDATION WORKING
 Phase 2  Web Reading            COMPLETE (core)
-Phase 3  Entity Extraction      INITIAL IMPLEMENTATION
-Phase 4  Discovery Intelligence INITIAL IMPLEMENTATION / RETEST READY
-Phase 5  Recursive Crawler      CONTROLLED INITIAL WORKFLOW / RETEST READY
+Phase 3  Entity Extraction      INITIAL IMPLEMENTATION / ACCOUNT EXTRACTION WORKING
+Phase 4  Discovery Intelligence WORKING / REFINEMENT NEEDED
+Phase 5  Recursive Crawler      CONTROLLED INITIAL WORKFLOW / TESTED TO DEPTH 1
 Phase 6  Knowledge Graph        PLANNED
 Phase 7  Investigation UI       PLANNED
 Phase 8  Reporting              PLANNED
@@ -112,18 +123,28 @@ Phase 9  Advanced OSINT         FUTURE
 Phase 10 Optimization           FUTURE
 ```
 
+## Known Issues / Technical Debt
+
+1. Generic page-title fragments can still be emitted as `person_candidate` values (`Certified Tester`, `Certification Number`, `Stock Video Portfolio`, etc.).
+2. Entity and account discoveries can be duplicated across recursion passes and should be consolidated more cleanly.
+3. Organisation attribution needs stronger source-level corroboration.
+4. The `sources` top-level field does not yet represent every source contributing to the evidence set.
+5. Confidence scoring can reach 1.00 without representing actual certainty; scoring needs calibration.
+6. Related-person account matches must remain separate unless independently corroborated.
+7. Public SearXNG instances remain an availability/quality dependency.
+
 ## Immediate Next Steps
 
-1. Deploy the latest GitHub code to the Cloudflare Worker.
-2. Retest `/investigate` with `Ramzul Ramli`.
-3. Retest `/investigate` with `Ramzul Mazwan Ramli`.
-4. Retest `/investigate` with `Ramzulhakim Ramli` as the separate-person control case.
-5. Confirm unrelated generic entities such as `control`, `windows` and `policy` no longer dominate an investigation caused by contaminated search results.
-6. Refine entity scoring and identity resolution only after the investigation tests pass.
-7. Then strengthen controlled recursion.
+1. Fix evidence/source attribution so every discovery has inspectable supporting sources.
+2. Improve entity extraction to reject page-title/UI fragments and generic nouns as people.
+3. Consolidate duplicate discoveries across recursion.
+4. Calibrate confidence scoring so 1.00 is not misleading.
+5. Strengthen identity resolution using corroborating evidence across name, profile, organisation, location and account signals.
+6. Re-run the three golden investigations: `Ramzul Ramli`, `Ramzul Mazwan Ramli`, `Ramzulhakim Ramli`.
+7. Only then increase recursion depth/budgets.
 
 Do not increase crawl budgets yet.
 
 ## Resume Note
 
-**Next engineering task: deploy current code and run the `/investigate` golden tests.**
+**Next engineering task: improve evidence/source attribution and entity-noise filtering, then rerun the identity-resolution golden tests.**
