@@ -134,7 +134,14 @@ function buildReport(investigations, query, state, depth, startedAt) {
       else if (e.type === "organisation_candidate") organisations.push(compact);
       else if (e.type === "location_candidate") locations.push(compact);
       else if (["username","email","phone"].includes(e.type)) accounts.push({ type:e.type, ...compact });
-      if (["person_candidate","organisation_candidate","location_candidate","username","email","phone"].includes(e.type)) evidence.push({ type:e.type, value:e.value, score:e.score, sources:e.sources.filter(s=>s.evidence).slice(0,3).map(s=>({title:s.title,url:s.url})) });
+
+      // Only promote person candidates that pass the same quality filter used by discoveries.
+      // This prevents page labels such as "Certified Tester" and "Certification Number"
+      // from leaking into the public-facing evidence section.
+      const usefulForEvidence = e.type !== "person_candidate" || isUsefulPerson(e, query);
+      if (usefulForEvidence && ["person_candidate","organisation_candidate","location_candidate","username","email","phone"].includes(e.type)) {
+        evidence.push({ type:e.type, value:e.value, score:e.score, sources:e.sources.filter(s=>s.evidence).slice(0,3).map(s=>({title:s.title,url:s.url})) });
+      }
     }
   }
   const unique = arr => arr.sort((a,b)=>(b.score||0)-(a.score||0)).slice(0,10);
