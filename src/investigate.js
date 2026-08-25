@@ -1,7 +1,6 @@
 import { extractEntityCandidates, extractTitle, extractReadableText } from "./index.js";
 import { search } from "./search.js";
 
-// Keep recursive investigations comfortably below Cloudflare Worker subrequest limits.
 const LIMITS = {
   maxSearchResults: 5,
   maxPages: 3,
@@ -20,14 +19,12 @@ const PERSON_NOISE_WORDS = new Set(["safety","how","home","watch","channel","vid
 const GENERIC_DISCOVERY_VALUES = new Set(["youtube","facebook","instagram","twitter","x","linkedin","tiktok","wikipedia","google","gmail","meta","facebook explore"]);
 
 function normalize(value) { return String(value || "").replace(/\s+/g, " ").trim().toLowerCase(); }
-
 function isSeedComponent(value, seedQuery) {
   const seedWords = normalize(seedQuery).split(/\s+/).filter(word => word.length >= 3);
   const candidateWords = normalize(value).split(/\s+/).filter(Boolean);
   if (!candidateWords.length || !seedWords.length) return false;
   return candidateWords.every(word => seedWords.includes(word));
 }
-
 function isUsefulPerson(entity, seedQuery) {
   const value = normalize(entity.value);
   if (!value || GENERIC_DISCOVERY_VALUES.has(value)) return false;
@@ -36,7 +33,6 @@ function isUsefulPerson(entity, seedQuery) {
   if (words.some(word => PERSON_NOISE_WORDS.has(word))) return false;
   return !isSeedComponent(value, seedQuery);
 }
-
 function isUsefulDiscovery(entity, seedQuery) {
   const value = normalize(entity.value);
   if (!value || GENERIC_DISCOVERY_VALUES.has(value)) return false;
@@ -45,7 +41,6 @@ function isUsefulDiscovery(entity, seedQuery) {
   if (entity.type === "url") return value.startsWith("http://") || value.startsWith("https://");
   return DISCOVERY_TYPES.has(entity.type);
 }
-
 function scoreEntity(entity, seedQuery) {
   const typeWeights = { email:1, phone:.95, username:.95, person_candidate:.85, organisation_candidate:.80, location_candidate:.65, url:.55, date:.35, year:.20, keyword:.15 };
   const confidence = Number(entity.confidence || 0);
@@ -59,7 +54,7 @@ function scoreEntity(entity, seedQuery) {
 async function fetchEntities(url) {
   const targetUrl = new URL(url);
   if (!["http:", "https:"].includes(targetUrl.protocol)) throw new Error("Only HTTP and HTTPS URLs are allowed");
-  const response = await fetch(targetUrl.toString(), { headers:{ "User-Agent":"Mozilla/5.0 (compatible; FreeOSINTExplorer/0.1)" } });
+  const response = await fetch(targetUrl.toString(), { headers:{ "User-Agent":"Mozilla/5.0 (compatible; FreeOSINTExplorer/0.6)" } });
   if (!response.ok) throw new Error(`Target returned HTTP ${response.status}`);
   const html = await response.text();
   const title = extractTitle(html), text = extractReadableText(html), entities = extractEntityCandidates(text);
@@ -71,13 +66,24 @@ function addEntityToMap(entityMap, entity, source, isEvidence = false) {
   const key = `${entity.type}:${normalize(entity.normalized)}`;
   const existing = entityMap.get(key);
   if (existing) {
-    if (!existing.sources.some(ref => ref.url === source.url)) {
+    const sourceRef = existing.sources.find(ref => ref.url === source.url);
+    if (sourceRef) {
+      // The search-result record and fetched-page record use the same URL.
+      // Upgrade the existing source reference with real fetch/evidence data.
+      if (isEvidence) sourceRef.evidence = true;
+      if (source.httpStatus != null) sourceRef.httpStatus = source.httpStatus;
+      if (source.textLength > 0) sourceRef.textLength = source.textLength;
+      if (isEvidence && !existing.evidenceUrls.has(source.url)) {
+        existing.evidenceCount += 1;
+        existing.evidenceUrls.add(source.url);
+      }
+    } else {
       existing.sourceCount += 1;
       existing.sources.push({ title:source.title, url:source.url, evidence:Boolean(isEvidence), httpStatus:source.httpStatus ?? null, textLength:source.textLength ?? 0 });
-    }
-    if (isEvidence && !existing.evidenceUrls.has(source.url)) {
-      existing.evidenceCount += 1;
-      existing.evidenceUrls.add(source.url);
+      if (isEvidence && !existing.evidenceUrls.has(source.url)) {
+        existing.evidenceCount += 1;
+        existing.evidenceUrls.add(source.url);
+      }
     }
     existing.confidence = Math.max(existing.confidence, Number(entity.confidence || 0));
     return;
@@ -121,6 +127,7 @@ async function investigateQuery(query, depth, state, env, requestedProvider) {
       const entityData = await fetchEntities(result.url);
       const source = { title:entityData.title || result.title || "", url:result.url, httpStatus:entityData.httpStatus, textLength:entityData.textLength || 0, entityCount:entityData.entities.length };
       pages.push(source);
+      // An entity extracted from successfully fetched page text is genuine page evidence.
       const isEvidence = entityData.textLength > 0 && entityData.entities.length > 0;
       for (const entity of entityData.entities.slice(0, LIMITS.maxEntitiesPerSource)) addEntityToMap(entityMap, entity, source, isEvidence);
     } catch (error) {
