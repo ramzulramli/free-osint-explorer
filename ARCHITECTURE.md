@@ -81,7 +81,7 @@ Provider success is two-stage: transport/parser success followed by search-quali
 
 DuckDuckGo currently often produces a bot/challenge response from the Worker. SearXNG fallback works, but public instances are not guaranteed to return relevant results.
 
-The current relevance layer scores exact phrases, all terms in titles, split title/snippet matches and weaker partial matches. For name-like queries it deliberately reduces the score of compound first-name matches such as `Ramzulhakim` when the query is `Ramzul Ramli`.
+The relevance layer scores exact phrases, all terms in titles, split title/snippet matches and weaker partial matches. For name-like queries it deliberately reduces the score of compound first-name matches such as `Ramzulhakim` when the query is `Ramzul Ramli`.
 
 ## Web Reading Engine
 
@@ -111,7 +111,13 @@ Processing includes normalization, deduplication, basic confidence and false-pos
 
 Search-result titles/snippets can also provide evidence when a target page cannot be fetched.
 
-This remains heuristic extraction, not full NLP/NER. Generic words from unrelated pages must not become strong discoveries merely because they occur repeatedly. Search-quality validation now precedes downstream entity extraction.
+Account extraction is now implemented for recognizable public profile URLs. Latest testing successfully extracted:
+- `Shutterstock: ramzul`
+- `LinkedIn: ramzul`
+
+The latest filtering also removed previously observed false-positive Shutterstock accounts for `Ramzul Alam` / `Mohd Ramzul b. Abdul Alam` from the final account summary. This demonstrates that account relevance filtering is improving, but it is not yet a complete identity-resolution system.
+
+Known remaining extraction noise includes generic page-title fragments being emitted as person candidates. These must be filtered before deeper identity reasoning.
 
 ## Investigation Orchestrator
 
@@ -132,7 +138,7 @@ Responsibilities:
 
 Current limits:
 - `maxSearchResults = 5`
-- `maxPages = 3`
+- `maxPages = 5`
 - `maxEntitiesPerSource = 50`
 - `maxRankedEntities = 50`
 - `maxDiscoveries = 25`
@@ -141,7 +147,25 @@ Current limits:
 - `maxSearchRequests = 5`
 - `maxVisitedQueries = 10`
 
-Do not increase these budgets until the investigation golden tests pass.
+The latest successful investigation reached depth 1 with 5 investigations, 25 pages read, 5 search requests and no skipped searches.
+
+## Latest Investigation Findings
+
+Test query: `Ramzul Mazwan Ramli`
+
+Observed:
+- overall confidence: 1.00 under the current scoring model;
+- primary full-name candidate: `Ramzul Mazwan bin Ramli`;
+- organisation candidates: `Telekom Malaysia`, `United Nations`;
+- locations: `Malaysia`, `Selangor`;
+- strongly corroborated account: `Shutterstock: ramzul` (0.975, 3 sources);
+- LinkedIn account: `ramzul` (0.7083, 1 source).
+
+Important distinction: the score of 1.00 is a model score, **not proof of identity**. Confidence calibration is still required.
+
+The latest result also showed that unrelated account candidates can be suppressed successfully. However, source attribution remains incomplete: the top-level `sources` field currently exposes only the MSTB record while the evidence references LinkedIn and Shutterstock pages as well. The architecture therefore needs a source/evidence model that preserves provenance for every discovery.
+
+`United Nations` is also currently insufficiently attributed in the supplied output and should remain an unverified discovery until supporting source evidence is retained.
 
 ## Identity Resolution Principle
 
@@ -183,6 +207,8 @@ Investigation Engine
  │
  ├── Entity Extraction
  │
+ ├── Account Extraction
+ │
  ├── Identity Resolution
  │
  ├── Discovery Queue
@@ -223,7 +249,7 @@ Result quality / relevance
    Read pages
        │
        ▼
-   Extract entities
+   Extract entities + accounts
        │
        ▼
    Aggregate / score
@@ -237,22 +263,26 @@ Result quality / relevance
 
 ## Test Findings
 
-Recent testing established four important behaviours:
+Recent testing established these behaviours:
 
 1. **Fallback works.** When DuckDuckGo returned a bot/challenge response, the system successfully moved to SearXNG.
 2. **Subrequest exhaustion is a real constraint.** Probing too many public SearXNG instances caused Cloudflare to reject the invocation, so provider probing must remain bounded.
-3. **Search relevance filtering works for the observed cases.** `Ramzul Ramli`, `Ramzul Mazwan Ramli`, `Ramzulhakim Ramli` and `Microsoft Windows` all produced relevant result sets in the latest direct tests.
-4. **Identity separation remains required.** `Ramzulhakim Ramli` is a separate known person. It may appear as a weaker compound-name candidate in a broad `Ramzul Ramli` search, but it must not be merged into the test subject without corroborating evidence.
+3. **Search relevance filtering works for the observed cases.** `Ramzul Ramli`, `Ramzul Mazwan Ramli`, `Ramzulhakim Ramli` and `Microsoft Windows` produced relevant direct-search result sets.
+4. **Account extraction works for the strongest observed profiles.** The latest investigation identifies Shutterstock `ramzul` and LinkedIn `ramzul`.
+5. **False-positive account suppression improved.** Earlier unrelated Shutterstock accounts are no longer present in the latest summary.
+6. **Identity separation remains required.** `Ramzulhakim Ramli` is a separate known person. It may appear as a weaker compound-name candidate in a broad `Ramzul Ramli` search, but it must not be merged into the test subject without corroborating evidence.
+7. **Source provenance is incomplete.** Evidence can reference more pages than the current top-level source list reports.
+8. **Confidence calibration is incomplete.** A model score of 1.00 is not equivalent to real-world certainty.
 
 ## Immediate Architectural Step
 
-The next step is no longer direct `/search` debugging. It is **retesting `/investigate` with the golden identity cases**.
+The next engineering step is **not** to increase recursion. It is to improve the evidence model and entity-quality layer:
 
-The investigation tests should verify that:
-- irrelevant Microsoft/AppLocker pages no longer contaminate discoveries;
-- generic terms such as `control`, `windows` and `policy` do not dominate a personal investigation;
-- `Ramzul Mazwan Ramli` can be connected as a possible full-name form of `Ramzul Ramli` only through evidence;
-- `Ramzulhakim Ramli` remains a separate candidate/person;
-- recursion remains within the existing resource budgets.
+- preserve source provenance for every entity/account discovery;
+- reject generic page-title/UI fragments as person candidates;
+- consolidate duplicates across recursion;
+- calibrate confidence;
+- strengthen identity resolution using independent corroborating signals;
+- rerun the three golden investigations.
 
-Only after these tests pass should deeper identity resolution, relationship extraction and recursive discovery be expanded.
+Only after these tests pass should deeper recursion, relationship extraction and the knowledge graph be expanded.
