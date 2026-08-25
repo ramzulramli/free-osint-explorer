@@ -26,6 +26,7 @@ const NON_PROFILE_PATHS = new Set([
 ]);
 
 function normalize(value) { return String(value || "").replace(/\s+/g, " ").trim().toLowerCase(); }
+function nameTokens(value) { return normalize(value).split(/\s+/).filter(w => w && w !== "bin" && w !== "binti"); }
 
 function cleanUrl(url) {
   try {
@@ -38,16 +39,17 @@ function cleanUrl(url) {
 function isPerson(entity, seed) {
   if (entity?.type !== "person_candidate") return false;
   const value = normalize(entity.value);
-  const words = value.split(/\s+/).filter(Boolean);
-  if (words.length < 2 || words.length > 5 || value.length > 80) return false;
-  const seedWords = normalize(seed).split(/\s+/).filter(w => w.length > 1 && w !== "bin" && w !== "binti");
+  const words = nameTokens(value);
+  const seedWords = nameTokens(seed);
+  if (words.length < 2 || words.length > 5 || value.length > 80 || seedWords.length < 2) return false;
+  const exact = words.join(" ") === seedWords.join(" ");
+  if (exact) return true;
   const overlap = seedWords.filter(w => words.includes(w)).length;
   const noise = words.filter(w => PERSON_NOISE.has(w));
-  const exact = value === normalize(seed) || value === normalize(seed).replace(/\b(bin|binti)\b/g, "").replace(/\s+/g, " ").trim();
-  if (exact) return true;
-  if (overlap < Math.min(2, seedWords.length)) return false;
-  if (noise.length > 0) return false;
-  return words.length <= seedWords.length + 1;
+  // A person candidate must contain every meaningful seed name token.
+  // This prevents unrelated names such as "Ramzul Mazwan Ramli Ramzul Nasri".
+  if (noise.length > 0 || overlap !== seedWords.length) return false;
+  return words.length === seedWords.length;
 }
 
 function accountFromUrl(url, title = "") {
@@ -78,21 +80,44 @@ function accountFromUrl(url, title = "") {
     if (!username || username.length > 100) return null;
 
     const titleText = normalize(title);
-    const usernameHit = titleText.includes(normalize(username));
+    const usernameText = normalize(decodeURIComponent(username.replace(/\+/g, " ")));
+    const usernameHit = titleText.includes(usernameText);
     const platformWeight = ["LinkedIn", "Shutterstock"].includes(platform) ? 0.85 : 0.75;
     const confidence = usernameHit ? Math.min(0.95, platformWeight + 0.1) : platformWeight;
 
     return {
-      type: "account",
-      platform,
-      username,
+      type: "account", platform, username,
       value: `${platform}: ${username}`,
       normalized: normalize(`${platform}:${username}`),
-      confidence,
-      url: cleanUrl(u.toString()),
-      title
+      confidence, url: cleanUrl(u.toString()), title
     };
   } catch { return null; }
+}
+
+function accountMatchesSubject(account, source, subject) {
+  if (!account?.platform || !account.username) return false;
+  const title = normalize(source?.title || account.title || "");
+  const username = normalize(decodeURIComponent(String(account.username).replace(/\+/g, " ")));
+  const seedWords = nameTokens(subject);
+  const titleHasFullName = seedWords.length >= 2 && seedWords.every(w => title.includes(w));
+  const usernameWords = nameTokens(username);
+  const usernameOverlaps = seedWords.filter(w => usernameWords.includes(w)).length;
+
+  // Explicitly reject profiles whose URL username contains another person's
+  // distinct full name, e.g. "Mohd Ramzul b. Abdul Alam" or "Ramzul Alam".
+  const looksLikeDifferentFullName = usernameWords.length >= 2 &&
+    usernameWords.some(w => !seedWords.includes(w)) &&
+    usernameOverlaps >= 1;
+  if (looksLikeDifferentFullName && !titleHasFullName) return false;
+
+  // Strong evidence: the page title itself contains the investigated person's name.
+  if (titleHasFullName) return true;
+
+  // A short username such as "ramzul" is acceptable only when it is a
+  // direct seed token. This keeps LinkedIn/Shutterstock "ramzul" while
+  // rejecting unrelated "Ramzul Alam" profiles.
+  if (usernameWords.length === 1 && seedWords.includes(usernameWords[0])) return true;
+  return false;
 }
 
 function add(map, entity, source, evidence = false) {
@@ -100,7 +125,9 @@ function add(map, entity, source, evidence = false) {
   const key = `${entity.type}:${normalize(entity.normalized)}`;
   let item = map.get(key);
   if (!item) {
-    item = { type: entity.type, value: entity.value, normalized: entity.normalized, confidence: Number(entity.confidence || 0), platform: entity.platform || null, username: entity.username || null, sourceCount: 0, evidenceCount: 0, sources: [] };
+    item = { type: entity.type, value: entity.value, normalized: entity.normalized,
+      confidence: Number(entity.confidence || 0), platform: entity.platform || null,
+      username: entity.username || null, sourceCount: 0, evidenceCount: 0, sources: [] };
     map.set(key, item);
   }
   item.confidence = Math.max(item.confidence, Number(entity.confidence || 0));
@@ -108,17 +135,23 @@ function add(map, entity, source, evidence = false) {
   const existing = item.sources.find(s => s.url === sourceUrl);
   if (!existing) {
     item.sourceCount += 1;
-    item.sources.push({ title: source.title || "", url: sourceUrl, evidence: Boolean(evidence), httpStatus: source.httpStatus ?? null, textLength: source.textLength ?? 0 });
+    item.sources.push({ title: source.title || "", url: sourceUrl,
+      evidence: Boolean(evidence), httpStatus: source.httpStatus ?? null,
+      textLength: source.textLength ?? 0 });
     if (evidence) item.evidenceCount += 1;
-  } else if (evidence && !existing.evidence) { existing.evidence = true; item.evidenceCount += 1; }
+  } else if (evidence && !existing.evidence) {
+    existing.evidence = true; item.evidenceCount += 1;
+  }
 }
 
 function score(entity, seed) {
-  const weights = { account: 1, email: 1, phone: .95, username: .9, person_candidate: .85, organisation_candidate: .8, location_candidate: .65 };
+  const weights = { account: 1, email: 1, phone: .95, username: .9,
+    person_candidate: .85, organisation_candidate: .8, location_candidate: .65 };
   const sourceBoost = Math.min(1, entity.sourceCount / 3);
   const evidenceBoost = Math.min(1, entity.evidenceCount / 3);
   const exact = normalize(entity.value) === normalize(seed) ? 1 : 0;
-  return Number(Math.min(1, Number(entity.confidence || 0) * .5 + sourceBoost * .2 + evidenceBoost * .2 + (weights[entity.type] || .25) * .1 + exact * .1).toFixed(4));
+  return Number(Math.min(1, Number(entity.confidence || 0) * .5 + sourceBoost * .2 +
+    evidenceBoost * .2 + (weights[entity.type] || .25) * .1 + exact * .1).toFixed(4));
 }
 
 function extractSearchEntities(result) {
@@ -131,7 +164,9 @@ function extractSearchEntities(result) {
     const m = title.match(/\s[-–—]\s+([^|]+?)\s*\|\s*LinkedIn/i);
     if (m?.[1]) {
       const org = m[1].replace(/\s+/g, " ").trim();
-      if (org.length >= 2 && org.length <= 100) entities.push({ type: "organisation_candidate", value: org, normalized: normalize(org), confidence: .78 });
+      if (org.length >= 2 && org.length <= 100)
+        entities.push({ type: "organisation_candidate", value: org,
+          normalized: normalize(org), confidence: .78 });
     }
   }
   return entities;
@@ -146,7 +181,9 @@ async function fetchPage(url) {
     const html = await response.text();
     const text = extractReadableText(html);
     const title = extractTitle(html);
-    return { ok: true, title, url: cleanUrl(target.toString()), httpStatus: response.status, textLength: text.length, entities: extractEntityCandidates(text), account: accountFromUrl(target.toString(), title) };
+    return { ok: true, title, url: cleanUrl(target.toString()), httpStatus: response.status,
+      textLength: text.length, entities: extractEntityCandidates(text),
+      account: accountFromUrl(target.toString(), title) };
   } catch (error) { return { ok: false, url, error: error.message || "Fetch failed" }; }
 }
 
@@ -168,7 +205,10 @@ async function investigateQuery(query, state, env, provider, depth, { fatal = fa
   state.visited.add(normalizedQuery); state.searchRequests += 1;
   let searchData;
   try { searchData = await search(query, env, provider); }
-  catch (error) { if (fatal) throw error; state.skippedSearches.push({ query, depth, reason: error.message || "Search failed" }); return null; }
+  catch (error) {
+    if (fatal) throw error;
+    state.skippedSearches.push({ query, depth, reason: error.message || "Search failed" }); return null;
+  }
   const results = Array.isArray(searchData.results) ? searchData.results.slice(0, LIMITS.maxSearchResults) : [];
   const entityMap = new Map(), successful = [], failed = [];
   for (const result of results) {
@@ -179,34 +219,81 @@ async function investigateQuery(query, state, env, provider, depth, { fatal = fa
     state.pagesRead += 1;
     const page = await fetchPage(result.url);
     if (!page.ok) { failed.push({ title: result.title || "", url: result.url, reason: page.error }); continue; }
-    const source = { title: page.title || result.title || "", url: page.url, httpStatus: page.httpStatus, textLength: page.textLength };
+    const source = { title: page.title || result.title || "", url: page.url,
+      httpStatus: page.httpStatus, textLength: page.textLength };
     successful.push(source);
     const evidence = page.textLength > 0 && page.entities.length > 0;
     for (const entity of page.entities.slice(0, LIMITS.maxEntitiesPerSource)) add(entityMap, entity, source, evidence);
     if (page.account) add(entityMap, page.account, source, evidence);
   }
-  const entities = [...entityMap.values()].map(e => ({ ...e, score: score(e, state.subject) })).sort((a, b) => b.score - a.score || b.evidenceCount - a.evidenceCount || b.sourceCount - a.sourceCount).slice(0, LIMITS.maxRankedEntities);
-  return { query, depth, search: { provider: searchData.provider, instance: searchData.instance, attemptedProviders: searchData.attemptedProviders || [searchData.provider], attemptedInstances: searchData.attemptedInstances || [], resultCount: searchData.results?.length || 0, processedCount: results.length }, sources: { successful, failed, successfulCount: successful.length, failedCount: failed.length }, entities };
+  const entities = [...entityMap.values()].map(e => ({ ...e, score: score(e, state.subject) }))
+    .sort((a, b) => b.score - a.score || b.evidenceCount - a.evidenceCount || b.sourceCount - a.sourceCount)
+    .slice(0, LIMITS.maxRankedEntities);
+  return { query, depth,
+    search: { provider: searchData.provider, instance: searchData.instance,
+      attemptedProviders: searchData.attemptedProviders || [searchData.provider],
+      attemptedInstances: searchData.attemptedInstances || [],
+      resultCount: searchData.results?.length || 0, processedCount: results.length },
+    sources: { successful, failed, successfulCount: successful.length, failedCount: failed.length }, entities };
 }
 
 function report(investigations, state, query, depth, startedAt) {
-  const people = new Map(), organisations = new Map(), locations = new Map(), accounts = new Map(), evidence = [], allSources = new Map();
-  const addCompact = (map, e, extra = {}) => { const key = `${e.type}:${e.normalized}`; if (!map.has(key)) map.set(key, { ...extra, value: e.value, score: e.score, sources: e.sourceCount }); };
+  const people = new Map(), organisations = new Map(), locations = new Map(), accounts = new Map();
+  const evidence = [], allSources = new Map();
+  const addCompact = (map, e, extra = {}) => {
+    const key = `${e.type}:${normalize(e.normalized || e.value)}`;
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, { ...extra, value: e.value, score: e.score, sources: e.sourceCount });
+    } else {
+      existing.score = Math.max(existing.score || 0, e.score || 0);
+      existing.sources = Math.max(existing.sources || 0, e.sourceCount || 0);
+    }
+  };
+
   for (const inv of investigations) {
     for (const source of inv.sources.successful) allSources.set(cleanUrl(source.url), source);
     for (const e of inv.entities) {
       if (!e.evidenceCount) continue;
       if (e.type === "person_candidate" && isPerson(e, query)) addCompact(people, e);
       else if (e.type === "organisation_candidate") addCompact(organisations, e);
-      else if (e.type === "location_candidate") addCompact(locations, e);
-      else if (e.type === "account") addCompact(accounts, e, { type: "profile", platform: e.platform, username: e.username, url: e.sources?.[0]?.url });
-      else if (["username", "email", "phone"].includes(e.type)) addCompact(accounts, e, { type: e.type });
-      if (["person_candidate", "organisation_candidate", "location_candidate", "account", "username", "email", "phone"].includes(e.type)) evidence.push({ type: e.type, value: e.value, score: e.score, sources: e.sources.filter(s => s.evidence).slice(0, 3).map(s => ({ title: s.title, url: s.url })) });
+      else if (e.type === "location_candidate') addCompact(locations, e);
+      else if (e.type === "account") {
+        const supportingSource = e.sources.find(s => s.evidence) || e.sources[0];
+        if (accountMatchesSubject(e, supportingSource, state.subject || query)) {
+          const key = `account:${normalize(e.platform)}:${normalize(e.username)}`;
+          addCompact(accounts, { ...e, normalized: key }, {
+            type: "profile", platform: e.platform, username: e.username,
+            url: e.sources?.[0]?.url
+          });
+        }
+      } else if (["username", "email", "phone"].includes(e.type)) addCompact(accounts, e, { type: e.type });
+
+      if (["person_candidate", "organisation_candidate", "location_candidate", "account", "username", "email", "phone"].includes(e.type)) {
+        evidence.push({ type: e.type, value: e.value, score: e.score,
+          sources: e.sources.filter(s => s.evidence).slice(0, 3).map(s => ({ title: s.title, url: s.url })) });
+      }
     }
   }
+
   const sort = map => [...map.values()].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 10);
   const topPerson = sort(people)[0];
-  return { status: "success", query, subject: state.subject || topPerson?.value || query, confidence: topPerson?.score || 0, summary: { people: sort(people), organisations: sort(organisations), locations: sort(locations), accounts: sort(accounts) }, evidence: evidence.slice(0, 20), sources: [...allSources.values()].map(s => ({ title: s.title, url: s.url, status: s.httpStatus, textLength: s.textLength })), stats: { searchResults: investigations[0]?.search?.resultCount || 0, pagesRead: state.pagesRead, investigations: investigations.length, evidenceItems: evidence.length, searchRequests: state.searchRequests, skippedSearches: state.skippedSearches.length, durationMs: Date.now() - startedAt }, skippedSearches: state.skippedSearches, limits: LIMITS, depth };
+  const uniqueEvidence = [], seenEvidence = new Set();
+  for (const item of evidence) {
+    const key = `${item.type}:${normalize(item.value)}:${item.sources.map(s => cleanUrl(s.url)).join("|")}`;
+    if (!seenEvidence.has(key)) { seenEvidence.add(key); uniqueEvidence.push(item); }
+  }
+
+  return { status: "success", query, subject: state.subject || topPerson?.value || query,
+    confidence: topPerson?.score || 0,
+    summary: { people: sort(people), organisations: sort(organisations), locations: sort(locations), accounts: sort(accounts) },
+    evidence: uniqueEvidence.slice(0, 20),
+    sources: [...allSources.values()].map(s => ({ title: s.title, url: s.url, status: s.httpStatus, textLength: s.textLength })),
+    stats: { searchResults: investigations[0]?.search?.resultCount || 0, pagesRead: state.pagesRead,
+      investigations: investigations.length, evidenceItems: uniqueEvidence.length,
+      searchRequests: state.searchRequests, skippedSearches: state.skippedSearches.length,
+      durationMs: Date.now() - startedAt }, skippedSearches: state.skippedSearches,
+    limits: LIMITS, depth };
 }
 
 async function investigate(request, env) {
