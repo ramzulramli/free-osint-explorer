@@ -53,6 +53,44 @@ function scoreEntity(entity, seedQuery) {
   return Number(Math.min(1, confidence*.50 + sourceBoost*.20 + evidenceBoost*.20 + (typeWeights[entity.type] || .25)*.10 + seedMatch*.10).toFixed(4));
 }
 
+function extractAccountFromUrl(url, title = "") {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    const path = parsed.pathname.replace(/\/+$/, "");
+    let platform = null;
+    let username = null;
+    if (host === "linkedin.com" || host.endsWith(".linkedin.com")) {
+      platform = "LinkedIn";
+      const match = path.match(/^\/in\/([^/]+)/i);
+      username = match?.[1] || null;
+    } else if (host === "shutterstock.com" || host.endsWith(".shutterstock.com")) {
+      platform = "Shutterstock";
+      const match = path.match(/^\/g\/([^/]+)/i);
+      username = match?.[1] || null;
+    } else if (host === "facebook.com" || host.endsWith(".facebook.com")) {
+      platform = "Facebook";
+      username = path.split("/").filter(Boolean)[0] || null;
+    } else if (host === "instagram.com" || host.endsWith(".instagram.com")) {
+      platform = "Instagram";
+      username = path.split("/").filter(Boolean)[0] || null;
+    } else if (host === "x.com" || host === "twitter.com") {
+      platform = "X";
+      username = path.split("/").filter(Boolean)[0] || null;
+    } else if (host === "tiktok.com" || host.endsWith(".tiktok.com")) {
+      platform = "TikTok";
+      username = path.split("/").filter(Boolean)[0]?.replace(/^@/, "") || null;
+    } else if (host === "youtube.com" || host === "youtu.be") {
+      platform = "YouTube";
+      const match = path.match(/^\/@?([^/]+)/i) || path.match(/^\/channel\/([^/]+)/i) || path.match(/^\/user\/([^/]+)/i);
+      username = match?.[1] || null;
+    }
+    if (!platform) return null;
+    const value = username ? `${platform}: ${username}` : platform;
+    return { type:"account", value, normalized:normalize(`${platform}:${username || ""}`), confidence:.75, platform, username, url:parsed.toString(), title };
+  } catch { return null; }
+}
+
 function extractSearchResultEntities(result) {
   const title = String(result.title || "").trim();
   const snippet = String(result.snippet || "").trim();
@@ -70,6 +108,8 @@ function extractSearchResultEntities(result) {
       }
     }
   }
+  const account = extractAccountFromUrl(result.url, title);
+  if (account) entities.push(account);
   return entities;
 }
 
@@ -102,7 +142,7 @@ function addEntityToMap(entityMap, entity, source, isEvidence = false) {
     existing.confidence = Math.max(existing.confidence, Number(entity.confidence || 0));
     return;
   }
-  entityMap.set(key, { type:entity.type, value:entity.value, normalized:entity.normalized, confidence:Number(entity.confidence || 0), sourceCount:1, evidenceCount:isEvidence ? 1 : 0, evidenceUrls:new Set(isEvidence ? [source.url] : []), sources:[{ title:source.title, url:source.url, evidence:Boolean(isEvidence), httpStatus:source.httpStatus ?? null, textLength:source.textLength ?? 0 }] });
+  entityMap.set(key, { type:entity.type, value:entity.value, normalized:entity.normalized, confidence:Number(entity.confidence || 0), sourceCount:1, evidenceCount:isEvidence ? 1 : 0, evidenceUrls:new Set(isEvidence ? [source.url] : []), platform:entity.platform || null, username:entity.username || null, sources:[{ title:source.title, url:source.url, evidence:Boolean(isEvidence), httpStatus:source.httpStatus ?? null, textLength:source.textLength ?? 0 }] });
 }
 function serializeEntity(entity, seedQuery) {
   const { evidenceUrls, ...safeEntity } = entity;
@@ -136,6 +176,8 @@ async function investigateQuery(query, depth, state, env, requestedProvider) {
       pages.push(source);
       const isEvidence = entityData.textLength > 0 && entityData.entities.length > 0;
       for (const entity of entityData.entities.slice(0, LIMITS.maxEntitiesPerSource)) addEntityToMap(entityMap, entity, source, isEvidence);
+      const fetchedAccount = extractAccountFromUrl(result.url, source.title);
+      if (fetchedAccount) addEntityToMap(entityMap, fetchedAccount, source, isEvidence);
     } catch (error) { failedSources.push({ title:result.title || "", url:result.url, reason:error.message || "Unknown source error" }); }
   }
   const allEntities = [...entityMap.values()].map(entity => serializeEntity(entity, query));
@@ -162,9 +204,10 @@ function buildReport(investigations, query, state, depth, startedAt) {
       else if (e.type === "organisation_candidate") organisations.push(compact);
       else if (e.type === "location_candidate") locations.push(compact);
       else if (["username","email","phone"].includes(e.type)) accounts.push({ type:e.type, ...compact });
+      else if (e.type === "account") accounts.push({ type:"profile", platform:e.platform, username:e.username, url:e.sources?.[0]?.url, ...compact });
 
       const usefulForEvidence = e.type !== "person_candidate" || isUsefulPerson(e, query);
-      if (usefulForEvidence && ["person_candidate","organisation_candidate","location_candidate","username","email","phone"].includes(e.type)) {
+      if (usefulForEvidence && ["person_candidate","organisation_candidate","location_candidate","username","email","phone","account"].includes(e.type)) {
         evidence.push({ type:e.type, value:e.value, score:e.score, sources:e.sources.filter(s=>s.evidence).slice(0,3).map(s=>({title:s.title,url:s.url})) });
       }
     }
