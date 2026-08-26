@@ -10,7 +10,7 @@ Build a free/RM0 where practical, on-demand OSINT discovery and investigation sy
 
 ```text
 Phase 0  Infrastructure         COMPLETE
-Phase 1  Search                 RELEVANCE VALIDATION WORKING
+Phase 1  Search                 NAME QUERY FAN-OUT WORKING
 Phase 2  Web Reading            COMPLETE (core)
 Phase 3  Entity Extraction      INITIAL IMPLEMENTATION / ACCOUNT EXTRACTION WORKING
 Phase 4  Discovery Intelligence WORKING / REFINEMENT NEEDED
@@ -18,7 +18,7 @@ Phase 5  Recursive Crawler      CONTROLLED WORKFLOW / TESTED TO DEPTH 1
 Phase 6  Knowledge Graph        PLANNED
 Phase 7  Investigation UI       FIRST WEB UI IMPLEMENTED
 Phase 8  Reporting              PLANNED
-Phase 9  Advanced OSINT         FUTURE
+Phase 9  Advanced OSINT          FUTURE
 Phase 10 Optimization           FUTURE
 ```
 
@@ -49,10 +49,12 @@ Current behaviour:
 - Search results are scored against the query before being returned.
 - Weak results with no query-term evidence are filtered out.
 - Compound-name partial matches are deliberately scored lower than exact name matches.
+- **Name-like queries now fan out into up to three bounded variants:** normal name, quoted exact name, and `bin` variant for two-token Malaysian-style names.
+- Duplicate URLs from those variants are merged and ranked against the original query.
+- Provider and attempted-query information is returned.
 - SearXNG fallback is bounded to a primary + one optional fallback instance to avoid Cloudflare Worker subrequest exhaustion.
-- Provider and attempted-provider information is returned.
 
-Status: **SEARCH PROVIDER + RELEVANCE VALIDATION WORKING**
+Status: **SEARCH + NAME DISCOVERY WORKING**
 
 ### `/fetch` / `/read`
 
@@ -65,12 +67,13 @@ Status: **WORKING / core**
 Controlled investigation workflow:
 1. Accept a seed subject/query.
 2. Search through the shared provider abstraction.
-3. Validate result quality.
-4. Collect a bounded result set.
-5. Read selected pages.
-6. Extract entities and account candidates from page content.
-7. Aggregate evidence and preserve source provenance.
-8. Score and filter discoveries.
+3. For name-like queries, automatically try bounded search variants.
+4. Validate result quality.
+5. Collect a bounded result set.
+6. Read selected pages.
+7. Extract entities and account candidates from page content.
+8. Aggregate evidence and preserve source provenance.
+9. Score and filter discoveries.
 
 Current API response includes:
 - investigation subject/query and confidence signal;
@@ -104,6 +107,7 @@ Current limits remain deliberately conservative:
 - Ranked people: 10
 - Related signals: 15
 - Search requests: bounded by provider layer
+- Name query variants: maximum 3
 
 **Do not increase crawl budgets yet.**
 
@@ -119,6 +123,16 @@ Ramzulhakim Ramli        = different person
 
 The engine must never merge people solely because names are similar. Search relevance and identity resolution remain separate layers; identity requires corroborating evidence.
 
+## Current Test Subject
+
+Next end-to-end development test:
+
+```text
+Shazzuwan Zakaria
+```
+
+Useful public search signals already observed during manual validation include the exact name, the `bin Zakaria` form, school-related references, and a sports-document reference. These are test leads only; they must be corroborated before being treated as one identity.
+
 ## Known Issues / Technical Debt
 
 1. Generic page-title fragments can still be emitted as `person_candidate` values.
@@ -129,13 +143,14 @@ The engine must never merge people solely because names are similar. Search rele
 6. Public SearXNG instances remain an availability/quality dependency.
 7. Live production verification of the current UI still needs to be performed after deployment.
 8. The current UI is intentionally minimal; investigation history, graph visualization and export/reporting are not implemented yet.
+9. Public contact details may be extracted when openly published, but private residential addresses should not be automatically harvested or displayed.
 
 ## Immediate Next Steps
 
-1. **Verify the deployed root UI** and run one end-to-end investigation from the browser.
-2. Fix any production-only issues discovered by the UI test.
+1. **Deploy/verify the current commits** and run `Shazzuwan Zakaria` end-to-end from the browser.
+2. Inspect whether the three name variants produce genuinely different useful sources.
 3. Improve entity-noise filtering and duplicate consolidation.
-4. Add stronger identity corroboration and explain why a candidate scored highly.
+4. Add source-backed public contact/work/education/location signal cards.
 5. Build the first relationship/knowledge-graph view from existing `candidates`, `related`, and `sources` data.
 6. Add investigation history/session state.
 7. Add exportable investigation report.
@@ -147,4 +162,4 @@ Do not get stuck in endless isolated search tests. Each test should now validate
 
 ## Resume Note
 
-**Current engineering milestone: first investigation web UI implemented in `src/index.js`. Next task is live browser verification, then relationship graph + reporting.**
+**Current engineering milestone: first investigation web UI + bounded name query fan-out implemented. Next task is live browser verification with `Shazzuwan Zakaria`, then signal cards/identity corroboration, relationship graph, and reporting.**
