@@ -18,7 +18,7 @@ Phase 5  Recursive Crawler      CONTROLLED WORKFLOW / TESTED TO DEPTH 1
 Phase 6  Knowledge Graph        PLANNED
 Phase 7  Investigation UI       FIRST WEB UI IMPLEMENTED
 Phase 8  Reporting              PLANNED
-Phase 9  Advanced OSINT          FUTURE
+Phase 9  Advanced OSINT         FUTURE
 Phase 10 Optimization           FUTURE
 ```
 
@@ -49,7 +49,7 @@ Current behaviour:
 - Search results are scored against the query before being returned.
 - Weak results with no query-term evidence are filtered out.
 - Compound-name partial matches are deliberately scored lower than exact name matches.
-- **Name-like queries now fan out into up to three bounded variants:** normal name, quoted exact name, and `bin` variant for two-token Malaysian-style names.
+- **Name-like queries fan out into up to three bounded variants:** normal name, quoted exact name, and `bin` variant for two-token Malaysian-style names.
 - Duplicate URLs from those variants are merged and ranked against the original query.
 - Provider and attempted-query information is returned.
 - SearXNG fallback is bounded to a primary + one optional fallback instance to avoid Cloudflare Worker subrequest exhaustion.
@@ -98,6 +98,20 @@ The Worker root `/` now serves a first usable web interface directly from the Wo
 
 The UI deliberately labels confidence as a **match signal**, not proof of identity.
 
+## Recent End-to-End Tests
+
+### `Fauzi Ariffin`
+
+The engine found a strong exact-name candidate across Facebook, Instagram and IMDb, while retaining `Mohd Fauzi Ariffin` separately. This validates name fan-out and candidate separation, but also shows that multi-source hits do not necessarily mean the same person.
+
+### `Shazzuwan Zakaria`
+
+The engine found an exact-name candidate plus an education-related long-form source and useful broad context such as Malaysia/Selangor, education/cikgu terminology and Mathematics/Bahasa references. It also exposed noisy person candidates from names mentioned on the same page and a separate `Shazwan Zakaria` spelling variant.
+
+**Conclusion:** the next product step is not another isolated search test. It is to turn these raw signals into source-attributed evidence and improve identity corroboration.
+
+Persistent test details are kept in `TEST_NOTES.md`.
+
 ## Investigation Limits
 
 Current limits remain deliberately conservative:
@@ -123,15 +137,14 @@ Ramzulhakim Ramli        = different person
 
 The engine must never merge people solely because names are similar. Search relevance and identity resolution remain separate layers; identity requires corroborating evidence.
 
-## Current Test Subject
-
-Next end-to-end development test:
+## Current Test Subjects
 
 ```text
+Fauzi Ariffin
 Shazzuwan Zakaria
 ```
 
-Useful public search signals already observed during manual validation include the exact name, the `bin Zakaria` form, school-related references, and a sports-document reference. These are test leads only; they must be corroborated before being treated as one identity.
+These are development test subjects. Results must be treated as public-source leads, not proof of identity.
 
 ## Known Issues / Technical Debt
 
@@ -144,22 +157,23 @@ Useful public search signals already observed during manual validation include t
 7. Live production verification of the current UI still needs to be performed after deployment.
 8. The current UI is intentionally minimal; investigation history, graph visualization and export/reporting are not implemented yet.
 9. Public contact details may be extracted when openly published, but private residential addresses should not be automatically harvested or displayed.
+10. Current extraction does not distinguish strongly enough between a person who owns/controls a profile and a person merely mentioned by a page.
 
-## Immediate Next Steps
+## Immediate Next Steps — Build, Don't Just Test
 
-1. **Deploy/verify the current commits** and run `Shazzuwan Zakaria` end-to-end from the browser.
-2. Inspect whether the three name variants produce genuinely different useful sources.
-3. Improve entity-noise filtering and duplicate consolidation.
-4. Add source-backed public contact/work/education/location signal cards.
-5. Build the first relationship/knowledge-graph view from existing `candidates`, `related`, and `sources` data.
-6. Add investigation history/session state.
-7. Add exportable investigation report.
+1. **Evidence-backed signal cards** — work, education, public social accounts, broad location and explicitly published public contact channels, each with source provenance.
+2. **Entity-noise filtering** — stop page titles, headings and unrelated names from becoming person candidates.
+3. **Identity corroboration** — score independent evidence dimensions separately: name, accounts, organisation, location, education/work overlap, contradictions and source quality.
+4. **Relationship graph v1** — connect candidate ↔ account ↔ organisation ↔ location ↔ source using existing data.
+5. **Investigation history** — persist recent investigations in the browser/session without requiring an always-on database.
+6. **Report/export** — generate a clean investigation summary with evidence and source links.
+7. **Production verification** — run the real Worker UI after each meaningful deployment.
 8. Only then consider broader crawl budgets and advanced OSINT modules.
 
 ## Development Rule
 
-Do not get stuck in endless isolated search tests. Each test should now validate or improve a product feature. Keep project documentation updated after meaningful milestones so the work can be resumed in a new chat without losing the engineering state.
+Do not get stuck in endless isolated search tests. Each test must validate or improve a product feature. Keep project documentation updated after meaningful milestones so the work can be resumed in a new chat without losing the engineering state.
 
 ## Resume Note
 
-**Current engineering milestone: first investigation web UI + bounded name query fan-out implemented. Next task is live browser verification with `Shazzuwan Zakaria`, then signal cards/identity corroboration, relationship graph, and reporting.**
+**Current engineering milestone: search name fan-out + first investigation UI are working. The next coding milestone is evidence-backed signal cards + stronger entity/identity corroboration, followed by graph and reporting.**
