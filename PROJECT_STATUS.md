@@ -1,6 +1,6 @@
 # Free OSINT Explorer — Project Status
 
-Last updated: 2026-08-26
+Last updated: 2026-08-27
 
 ## Goal
 
@@ -49,9 +49,9 @@ Current behaviour:
 - Search results are scored against the query before being returned.
 - Weak results with no query-term evidence are filtered out.
 - Compound-name partial matches are deliberately scored lower than exact name matches.
-- **Name-like queries fan out into up to three bounded variants:** normal name, quoted exact name, and `bin` variant for two-token Malaysian-style names.
-- Duplicate URLs from those variants are merged and ranked against the original query.
-- Provider and attempted-query information is returned.
+- **Name-like queries now fan out into up to five bounded variants:** original name, quoted exact name, `bin` form, `b.` form, and reversed order for two-token names; longer names also get compact/bin/binti-normalised variants where appropriate.
+- Duplicate URLs from variants are merged and ranked against the original query.
+- Provider, attempted-query and variant-count information is returned.
 - SearXNG fallback is bounded to a primary + one optional fallback instance to avoid Cloudflare Worker subrequest exhaustion.
 
 Status: **SEARCH + NAME DISCOVERY WORKING**
@@ -108,7 +108,13 @@ The engine found a strong exact-name candidate across Facebook, Instagram and IM
 
 The engine found an exact-name candidate plus an education-related long-form source and useful broad context such as Malaysia/Selangor, education/cikgu terminology and Mathematics/Bahasa references. It also exposed noisy person candidates from names mentioned on the same page and a separate `Shazwan Zakaria` spelling variant.
 
-**Conclusion:** the next product step is not another isolated search test. It is to turn these raw signals into source-attributed evidence and improve identity corroboration.
+### `Ramli Musa`
+
+Selected as the next identity-resolution test subject. The purpose of this test is to validate the expanded Malaysian-name query variants and, more importantly, whether the engine can keep multiple people with the same/common name separated rather than treating search-result volume as identity proof.
+
+Live Worker execution was not completed from the current development environment, so this remains a pending end-to-end verification rather than a claimed result.
+
+**Conclusion:** the next product step is not another isolated search test. It is to turn raw search/page signals into source-attributed evidence and improve identity corroboration.
 
 Persistent test details are kept in `TEST_NOTES.md`.
 
@@ -121,7 +127,7 @@ Current limits remain deliberately conservative:
 - Ranked people: 10
 - Related signals: 15
 - Search requests: bounded by provider layer
-- Name query variants: maximum 3
+- Name query variants: maximum 5
 
 **Do not increase crawl budgets yet.**
 
@@ -142,6 +148,7 @@ The engine must never merge people solely because names are similar. Search rele
 ```text
 Fauzi Ariffin
 Shazzuwan Zakaria
+Ramli Musa  <-- next pending live verification
 ```
 
 These are development test subjects. Results must be treated as public-source leads, not proof of identity.
@@ -176,4 +183,4 @@ Do not get stuck in endless isolated search tests. Each test must validate or im
 
 ## Resume Note
 
-**Current engineering milestone: search name fan-out + first investigation UI are working. The next coding milestone is evidence-backed signal cards + stronger entity/identity corroboration, followed by graph and reporting.**
+**Current engineering milestone: search name fan-out expanded to five bounded variants. Next coding milestone: evidence-backed signal cards + stronger entity/identity corroboration, followed by graph and reporting. `Ramli Musa` is the pending live verification test.**
