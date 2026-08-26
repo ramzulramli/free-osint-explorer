@@ -33,8 +33,6 @@ Status: RELEVANCE VALIDATION WORKING
 - [ ] Advanced search result ranking
 - [ ] Broader noisy-result detection
 
-Recent direct tests pass for `Ramzul Ramli`, `Ramzul Mazwan Ramli`, `Ramzulhakim Ramli` and `Microsoft Windows`.
-
 ## Phase 2 — Web Reading
 
 Status: COMPLETE (CORE)
@@ -72,11 +70,9 @@ Status: INITIAL IMPLEMENTATION / ACCOUNT EXTRACTION WORKING
 - [ ] Phone extraction with context
 - [ ] More language-aware extraction
 
-Latest investigation successfully identifies the strongest Shutterstock `ramzul` and LinkedIn `ramzul` profiles while suppressing previously observed unrelated Shutterstock accounts.
-
 ## Phase 4 — Discovery Intelligence
 
-Status: WORKING / REFINEMENT NEEDED
+Status: WORKING / IDENTITY RESOLUTION INITIAL IMPLEMENTATION
 
 - [x] `/investigate`
 - [x] Seed search
@@ -91,15 +87,15 @@ Status: WORKING / REFINEMENT NEEDED
 - [x] Investigation budgets
 - [x] Recursion depth control
 - [x] Initial search-result relevance scoring
+- [x] Initial person-candidate grouping
+- [x] Initial identity-resolution scoring
+- [x] Account-to-candidate association
 - [ ] Evidence/source provenance completeness
 - [ ] Better entity confidence
 - [ ] Source confidence
 - [ ] Related-query generation
 - [ ] Priority queue
-- [ ] Identity resolution
 - [ ] Cross-source corroboration model
-
-Latest successful test reached depth 1 with 5 investigations, 25 pages read, 5 search requests and no skipped searches.
 
 ## Phase 5 — Recursive Crawler
 
@@ -196,12 +192,12 @@ Status: FUTURE
 
 ## Current Priority
 
-1. Preserve complete source/evidence provenance for every discovery.
-2. Remove generic page-title/UI fragments from person candidates.
-3. Consolidate duplicate discoveries across recursive investigations.
-4. Calibrate confidence so 1.00 does not imply certainty.
-5. Strengthen identity resolution using independent corroborating signals.
-6. Run the golden investigations: `Ramzul Ramli`, `Ramzul Mazwan Ramli`, `Ramzulhakim Ramli`.
+1. Test the new person-candidate grouping with the golden identities.
+2. Verify that overlapping names such as `Ramzul Ramli`, `Ramzul Mazwan Ramli`, and `Ramzulhakim Ramli` remain separate candidates unless corroborating signals connect them.
+3. Preserve complete source/evidence provenance.
+4. Improve confidence calibration so 1.00 never implies certainty.
+5. Add stronger cross-source corroboration.
+6. Run the golden investigations and compare false merges/false splits.
 7. Only after those pass, increase recursion depth/budgets.
 8. Build relationship/graph structures.
 9. Build UI and reporting.
