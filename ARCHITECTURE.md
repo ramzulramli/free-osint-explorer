@@ -1,14 +1,14 @@
 # Free OSINT Explorer — Architecture
 
-Last updated: 2026-08-25
+Last updated: 2026-08-30
 
 ## Current Architecture Status
 
 The project uses a shared search-provider abstraction behind `/search` and `/investigate`. DuckDuckGo is attempted first in `auto` mode, with bounded SearXNG fallback. Search results are normalized before downstream processing.
 
-A key finding from testing was that **HTTP 200 + valid JSON does not prove search quality**. A public SearXNG instance previously returned unrelated Microsoft/Windows/AppLocker pages for `Ramzul Ramli`. The search layer now scores results against the query and filters results with no query-term evidence.
+A key finding from testing is that **HTTP 200 + valid JSON does not prove search quality**. The search layer therefore scores results against the query and filters results with insufficient query-term evidence.
 
-Five sequential public SearXNG instance requests exhausted the Cloudflare Worker subrequest budget. SearXNG probing is therefore intentionally bounded to a primary instance plus at most one fallback.
+SearXNG probing is intentionally bounded because public instances can consume the Cloudflare Worker subrequest budget.
 
 ## API Flow
 
@@ -16,7 +16,7 @@ Five sequential public SearXNG instance requests exhausted the Cloudflare Worker
 USER / CLIENT
      │
      ▼
-Cloudflare Worker API
+Cloudflare Worker
      │
  ┌───┼──────────────┐
  ▼   ▼              ▼
@@ -33,13 +33,13 @@ abstraction    │       │
 Normalized search results
  │
  ▼
-Search-result quality / relevance validation
+Search quality / relevance
  │
  ▼
 Entity extraction
  │
  ▼
-Relevance / discovery filtering
+Discovery filtering
  │
  ▼
 Controlled queue
@@ -60,7 +60,7 @@ Bounded recursion
               ▼                 ▼
         DuckDuckGo          SearXNG
               │                 │
-       bot/challenge      primary + one fallback
+       bot/challenge      primary + fallback
               │                 │
               └────────┬────────┘
                        ▼
@@ -79,9 +79,7 @@ Bounded recursion
 
 Provider success is two-stage: transport/parser success followed by search-quality success.
 
-DuckDuckGo currently often produces a bot/challenge response from the Worker. SearXNG fallback works, but public instances are not guaranteed to return relevant results.
-
-The relevance layer scores exact phrases, all terms in titles, split title/snippet matches and weaker partial matches. For name-like queries it deliberately reduces the score of compound first-name matches such as `Ramzulhakim` when the query is `Ramzul Ramli`.
+For name-like queries, bounded query fan-out improves discovery while compound-name partial matches are deliberately penalized.
 
 ## Web Reading Engine
 
@@ -102,22 +100,16 @@ Initial types:
 - Organisation candidates
 - Locations
 - URLs
-- Usernames
+- Usernames/accounts
 - Dates
 - Years
 - Keywords
 
-Processing includes normalization, deduplication, basic confidence and false-positive filtering.
+Processing includes normalization, deduplication, confidence scoring and false-positive filtering.
 
-Search-result titles/snippets can also provide evidence when a target page cannot be fetched.
+Recognizable public profile URLs can produce account candidates such as LinkedIn or Shutterstock profiles. Account relevance filtering is applied before final presentation, but account ownership is still an identity-resolution question rather than proof.
 
-Account extraction is now implemented for recognizable public profile URLs. Latest testing successfully extracted:
-- `Shutterstock: ramzul`
-- `LinkedIn: ramzul`
-
-The latest filtering also removed previously observed false-positive Shutterstock accounts for `Ramzul Alam` / `Mohd Ramzul b. Abdul Alam` from the final account summary. This demonstrates that account relevance filtering is improving, but it is not yet a complete identity-resolution system.
-
-Known remaining extraction noise includes generic page-title fragments being emitted as person candidates. These must be filtered before deeper identity reasoning.
+Known remaining extraction noise includes generic page-title/UI fragments and names merely mentioned by a page. These must be filtered before deeper identity reasoning.
 
 ## Investigation Orchestrator
 
@@ -129,43 +121,83 @@ Responsibilities:
 3. Validate result-set quality.
 4. Collect a bounded result set.
 5. Read selected pages.
-6. Extract page and search-result entities.
+6. Extract page and search-result entities/accounts.
 7. Aggregate and score discoveries.
 8. Filter metadata/noise.
 9. Queue eligible discoveries when recursion is requested.
 10. Prevent duplicate query processing.
 11. Track budgets and execution history.
 
-Current limits:
-- `maxSearchResults = 5`
-- `maxPages = 5`
-- `maxEntitiesPerSource = 50`
-- `maxRankedEntities = 50`
-- `maxDiscoveries = 25`
-- `maxDepth = 2`
-- `maxQueueItems = 5`
-- `maxSearchRequests = 5`
-- `maxVisitedQueries = 10`
+Current limits remain conservative, including bounded search results, page reads, search requests, queue items and recursion depth.
 
-The latest successful investigation reached depth 1 with 5 investigations, 25 pages read, 5 search requests and no skipped searches.
+## Live Investigation UI
 
-## Latest Investigation Findings
+The V2 UI is implemented on branch `ui-v2-live-investigation` and consumes the `/investigate` JSON response.
 
-Test query: `Ramzul Mazwan Ramli`
+```text
+Browser
+  │
+  ▼
+Live dashboard
+  │
+  │ GET /investigate?q=<subject>
+  ▼
+Cloudflare Worker
+  │
+  ▼
+Investigation engine
+  │
+  ├── search provider
+  ├── page reader
+  ├── entity/account extraction
+  ├── relevance scoring
+  └── identity/discovery scoring
+  │
+  ▼
+JSON response
+  │
+  ▼
+Dashboard renderer
+```
 
-Observed:
-- overall confidence: 1.00 under the current scoring model;
-- primary full-name candidate: `Ramzul Mazwan bin Ramli`;
-- organisation candidates: `Telekom Malaysia`, `United Nations`;
-- locations: `Malaysia`, `Selangor`;
-- strongly corroborated account: `Shutterstock: ramzul` (0.975, 3 sources);
-- LinkedIn account: `ramzul` (0.7083, 1 source).
+The dashboard presents:
+- primary subject;
+- confidence/match signal;
+- evidence/related entities;
+- accounts/profiles;
+- organisations and locations;
+- public contact signal area;
+- identity signals;
+- sources;
+- investigation statistics.
 
-Important distinction: the score of 1.00 is a model score, **not proof of identity**. Confidence calibration is still required.
+The V2 dashboard has been successfully verified against a real investigation in the Worker version preview.
 
-The latest result also showed that unrelated account candidates can be suppressed successfully. However, source attribution remains incomplete: the top-level `sources` field currently exposes only the MSTB record while the evidence references LinkedIn and Shutterstock pages as well. The architecture therefore needs a source/evidence model that preserves provenance for every discovery.
+## Production Verification Problem
 
-`United Nations` is also currently insufficiently attributed in the supplied output and should remain an unverified discovery until supporting source evidence is retained.
+The Worker version preview for the latest UI deployment was reachable and `/investigate` successfully returned investigation data. However, after promotion to production, the browser UI still reported `Failed to fetch`.
+
+This means production verification is currently a separate engineering problem from the investigation engine.
+
+Debug order:
+
+```text
+Production UI
+    │
+    ├── direct production /investigate test
+    │
+    ├── browser Network/Console
+    │
+    ├── CORS response headers
+    │
+    ├── API URL/path
+    │
+    ├── Worker entry point/version
+    │
+    └── environment bindings
+```
+
+Do not change the investigation engine until this connectivity path is isolated.
 
 ## Identity Resolution Principle
 
@@ -179,9 +211,29 @@ Ramzul Ramli             = common/public name used by test subject
 Ramzulhakim Ramli        = different person
 ```
 
-A similar name can be retained as a candidate discovery, but the system must not merge people solely on name similarity. Identity requires corroborating evidence such as usernames, profiles, locations, organisations, links, dates or other independent signals.
+A similar name can be retained as a candidate discovery, but the system must not merge people solely on name similarity. Identity requires corroborating evidence such as usernames, profiles, locations, organisations, education/work overlap, links, dates, source quality and contradictions.
 
-The `Ramzul Ramli` test is specifically intended to expose this distinction.
+Confidence is a match signal, not proof of identity.
+
+## Evidence Model — Target
+
+Every surfaced discovery should eventually retain:
+
+```text
+Entity
+  ├── type
+  ├── normalized value
+  ├── confidence
+  ├── supporting evidence[]
+  │      ├── source URL
+  │      ├── source title
+  │      ├── evidence text/context
+  │      └── evidence type
+  ├── relationships[]
+  └── contradictions[]
+```
+
+This is required before the project can safely expose a richer knowledge graph or claim strong identity matches.
 
 ## Target Architecture
 
@@ -201,22 +253,15 @@ Investigation Engine
  │      ├── DuckDuckGo
  │      └── SearXNG
  │
- ├── Search Result Quality / Relevance Engine
- │
+ ├── Search Result Quality / Relevance
  ├── Fetch / Read
- │
  ├── Entity Extraction
- │
  ├── Account Extraction
- │
  ├── Identity Resolution
- │
+ ├── Evidence / Provenance Model
  ├── Discovery Queue
- │
  ├── Controlled Recursion
- │
  ├── Relationship Engine
- │
  └── Knowledge Graph
           │
           ├── Sources
@@ -259,30 +304,40 @@ Result quality / relevance
        │
        ▼
    Queue + bounded recursion
+       │
+       ▼
+   JSON response
+       │
+       ▼
+   Live UI
 ```
 
 ## Test Findings
 
-Recent testing established these behaviours:
+Recent testing established:
 
-1. **Fallback works.** When DuckDuckGo returned a bot/challenge response, the system successfully moved to SearXNG.
-2. **Subrequest exhaustion is a real constraint.** Probing too many public SearXNG instances caused Cloudflare to reject the invocation, so provider probing must remain bounded.
-3. **Search relevance filtering works for the observed cases.** `Ramzul Ramli`, `Ramzul Mazwan Ramli`, `Ramzulhakim Ramli` and `Microsoft Windows` produced relevant direct-search result sets.
-4. **Account extraction works for the strongest observed profiles.** The latest investigation identifies Shutterstock `ramzul` and LinkedIn `ramzul`.
-5. **False-positive account suppression improved.** Earlier unrelated Shutterstock accounts are no longer present in the latest summary.
-6. **Identity separation remains required.** `Ramzulhakim Ramli` is a separate known person. It may appear as a weaker compound-name candidate in a broad `Ramzul Ramli` search, but it must not be merged into the test subject without corroborating evidence.
-7. **Source provenance is incomplete.** Evidence can reference more pages than the current top-level source list reports.
-8. **Confidence calibration is incomplete.** A model score of 1.00 is not equivalent to real-world certainty.
+1. **Fallback works.** DuckDuckGo bot/challenge responses can trigger SearXNG fallback.
+2. **Subrequest exhaustion is real.** Public-provider probing must remain bounded.
+3. **Search relevance filtering works for observed cases.** Name searches are better separated from unrelated compound-name results.
+4. **Account extraction works for recognizable public profiles.**
+5. **False-positive account suppression improved.**
+6. **Identity separation remains required.** Similar names must not be merged without corroboration.
+7. **Source provenance is incomplete.** Evidence can reference more pages than the current top-level source list exposes.
+8. **Confidence calibration is incomplete.** A high model score is not equivalent to certainty.
+9. **Live UI rendering works in Worker preview.**
+10. **Production UI still has a `Failed to fetch` blocker after promotion.**
 
 ## Immediate Architectural Step
 
-The next engineering step is **not** to increase recursion. It is to improve the evidence model and entity-quality layer:
+The next engineering step is **production connectivity diagnosis**, followed by evidence quality:
 
+- verify production `/investigate` directly;
+- isolate CORS/path/version/environment differences;
 - preserve source provenance for every entity/account discovery;
 - reject generic page-title/UI fragments as person candidates;
 - consolidate duplicates across recursion;
 - calibrate confidence;
 - strengthen identity resolution using independent corroborating signals;
-- rerun the three golden investigations.
+- rerun the golden investigations.
 
 Only after these tests pass should deeper recursion, relationship extraction and the knowledge graph be expanded.
