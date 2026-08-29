@@ -112,25 +112,162 @@ export { extractEntityCandidates, extractTitle, extractReadableText, extractLink
 
 export default { async fetch(request,env){
   const url=new URL(request.url);
-  if(url.pathname==="/")return new Response(appHtml(),{headers:{"content-type":"text/html; charset=UTF-8","cache-control":"no-store"}});
+
+  const corsHeaders={
+    "Access-Control-Allow-Origin":"*",
+    "Access-Control-Allow-Methods":"GET, OPTIONS",
+    "Access-Control-Allow-Headers":"Content-Type"
+  };
+
+  if(request.method==="OPTIONS"){
+    return new Response(null,{status:204,headers:corsHeaders});
+  }
+
+  if(url.pathname==="/")
+    return new Response(appHtml(),{
+      headers:{
+        "content-type":"text/html; charset=UTF-8",
+        "cache-control":"no-store"
+      }
+    });
+
   if(url.pathname==="/search"){
-    const query=url.searchParams.get("q")?.trim();if(!query)return Response.json({error:"Missing search query",usage:"/search?q=keyword"},{status:400});
-    try{return Response.json({status:"success",...(await search(query,env,url.searchParams.get("provider")?.trim().toLowerCase()||null))});}catch(error){return Response.json({status:"error",message:error.message},{status:502});}
-  }
-  if(url.pathname==="/investigate"){
-    const query=url.searchParams.get("q")?.trim();if(!query)return Response.json({error:"Missing investigation query",usage:"/investigate?q=Sabri%20Yunus"},{status:400});
-    try{return Response.json(await investigate(query,env,url.searchParams.get("provider")?.trim().toLowerCase()||null));}catch(error){return Response.json({status:"error",message:error.message},{status:502});}
-  }
-  if(url.pathname==="/fetch"||url.pathname==="/read"||url.pathname==="/entities"){
-    const target=url.searchParams.get("url")?.trim();if(!target)return Response.json({error:"Missing URL",usage:`${url.pathname}?url=https://example.com`},{status:400});
+    const query=url.searchParams.get("q")?.trim();
+
+    if(!query)
+      return Response.json(
+        {error:"Missing search query",usage:"/search?q=keyword"},
+        {status:400,headers:corsHeaders}
+      );
+
     try{
-      const targetUrl=new URL(target);if(!["http:","https:"].includes(targetUrl.protocol))throw new Error("Only HTTP and HTTPS URLs are allowed");
-      const response=await fetch(targetUrl.toString(),{headers:{"User-Agent":"Mozilla/5.0 (compatible; FreeOSINTExplorer/0.4)"}}),html=await response.text();if(!response.ok)throw new Error(`Target returned HTTP ${response.status}`);
-      if(url.pathname==="/fetch")return Response.json({status:"success",url:targetUrl.toString(),httpStatus:response.status,contentType:response.headers.get("content-type"),contentLength:html.length,preview:html.substring(0,1000)});
-      const title=extractTitle(html),text=extractReadableText(html);
-      if(url.pathname==="/read"){const links=extractLinks(html,targetUrl.toString());return Response.json({status:"success",url:targetUrl.toString(),httpStatus:response.status,title,textLength:text.length,text:text.substring(0,10000),linkCount:links.length,links:links.slice(0,100)});}
-      const entities=extractEntityCandidates(text);return Response.json({status:"success",url:targetUrl.toString(),httpStatus:response.status,title,textLength:text.length,entityCount:entities.length,entities});
-    }catch(error){return Response.json({status:"error",message:error.message},{status:502});}
+      return Response.json(
+        {
+          status:"success",
+          ...(await search(
+            query,
+            env,
+            url.searchParams.get("provider")?.trim().toLowerCase()||null
+          ))
+        },
+        {headers:corsHeaders}
+      );
+    }catch(error){
+      return Response.json(
+        {status:"error",message:error.message},
+        {status:502,headers:corsHeaders}
+      );
+    }
   }
-  return Response.json({error:"Not found"},{status:404});
+
+  if(url.pathname==="/investigate"){
+    const query=url.searchParams.get("q")?.trim();
+
+    if(!query)
+      return Response.json(
+        {
+          error:"Missing investigation query",
+          usage:"/investigate?q=Sabri%20Yunus"
+        },
+        {status:400,headers:corsHeaders}
+      );
+
+    try{
+      return Response.json(
+        await investigate(
+          query,
+          env,
+          url.searchParams.get("provider")?.trim().toLowerCase()||null
+        ),
+        {headers:corsHeaders}
+      );
+    }catch(error){
+      return Response.json(
+        {status:"error",message:error.message},
+        {status:502,headers:corsHeaders}
+      );
+    }
+  }
+
+  if(url.pathname==="/fetch"||url.pathname==="/read"||url.pathname==="/entities"){
+    const target=url.searchParams.get("url")?.trim();
+
+    if(!target)
+      return Response.json(
+        {
+          error:"Missing URL",
+          usage:`${url.pathname}?url=https://example.com`
+        },
+        {status:400,headers:corsHeaders}
+      );
+
+    try{
+      const targetUrl=new URL(target);
+
+      if(!["http:","https:"].includes(targetUrl.protocol))
+        throw new Error("Only HTTP and HTTPS URLs are allowed");
+
+      const response=await fetch(targetUrl.toString(),{
+        headers:{
+          "User-Agent":"Mozilla/5.0 (compatible; FreeOSINTExplorer/0.4)"
+        }
+      });
+
+      const html=await response.text();
+
+      if(!response.ok)
+        throw new Error(`Target returned HTTP ${response.status}`);
+
+      if(url.pathname==="/fetch")
+        return Response.json({
+          status:"success",
+          url:targetUrl.toString(),
+          httpStatus:response.status,
+          contentType:response.headers.get("content-type"),
+          contentLength:html.length,
+          preview:html.substring(0,1000)
+        },{headers:corsHeaders});
+
+      const title=extractTitle(html);
+      const text=extractReadableText(html);
+
+      if(url.pathname==="/read"){
+        const links=extractLinks(html,targetUrl.toString());
+
+        return Response.json({
+          status:"success",
+          url:targetUrl.toString(),
+          httpStatus:response.status,
+          title,
+          textLength:text.length,
+          text:text.substring(0,10000),
+          linkCount:links.length,
+          links:links.slice(0,100)
+        },{headers:corsHeaders});
+      }
+
+      const entities=extractEntityCandidates(text);
+
+      return Response.json({
+        status:"success",
+        url:targetUrl.toString(),
+        httpStatus:response.status,
+        title,
+        textLength:text.length,
+        entityCount:entities.length,
+        entities
+      },{headers:corsHeaders});
+
+    }catch(error){
+      return Response.json(
+        {status:"error",message:error.message},
+        {status:502,headers:corsHeaders}
+      );
+    }
+  }
+
+  return Response.json(
+    {error:"Not found"},
+    {status:404,headers:corsHeaders}
+  );
 } };
