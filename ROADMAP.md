@@ -25,8 +25,8 @@ Status: RELEVANCE VALIDATION WORKING
 - [x] Search provider abstraction
 - [x] SearXNG integration
 - [x] DuckDuckGo → SearXNG automatic fallback
-- [x] Bounded SearXNG fallback to protect Worker subrequests
-- [x] Initial search-result quality/relevance validation
+- [x] Bounded SearXNG fallback
+- [x] Search-result quality/relevance validation
 - [x] Exact phrase and all-term matching
 - [x] Compound-name partial-match penalty
 - [ ] Validate more SearXNG instances for quality
@@ -50,7 +50,7 @@ Status: COMPLETE (CORE)
 
 ## Phase 3 — Entity Extraction
 
-Status: INITIAL IMPLEMENTATION / ACCOUNT EXTRACTION WORKING
+Status: WORKING / REFINEMENT NEEDED
 
 - [x] Person candidates
 - [x] Organisation candidates
@@ -72,7 +72,7 @@ Status: INITIAL IMPLEMENTATION / ACCOUNT EXTRACTION WORKING
 
 ## Phase 4 — Discovery Intelligence
 
-Status: WORKING / IDENTITY RESOLUTION INITIAL IMPLEMENTATION
+Status: WORKING / IDENTITY RESOLUTION INITIAL
 
 - [x] `/investigate`
 - [x] Seed search
@@ -99,7 +99,7 @@ Status: WORKING / IDENTITY RESOLUTION INITIAL IMPLEMENTATION
 
 ## Phase 5 — Recursive Crawler
 
-Status: CONTROLLED INITIAL WORKFLOW / DEPTH-1 TESTED
+Status: CONTROLLED WORKFLOW / DEPTH-1 TESTED
 
 - [x] Seed investigation
 - [x] Depth 0
@@ -131,18 +131,33 @@ Status: PLANNED
 
 ## Phase 7 — Investigation UI
 
-Status: PLANNED
+Status: LIVE V2 IMPLEMENTATION / PRODUCTION VERIFICATION BLOCKED
 
-- [ ] Search interface
-- [ ] Investigation configuration
-- [ ] Progress indicator
-- [ ] Results page
+- [x] Search interface
+- [x] Investigation entry point
+- [x] Live `/investigate` data layer
+- [x] Primary subject card
+- [x] Confidence/match signal
+- [x] Evidence/related-entity section
+- [x] Account/profile section
+- [x] Organisation/location signals
+- [x] Public contact signal section
+- [x] Identity signal panel
+- [x] Source list
+- [x] Investigation statistics
+- [x] Responsive dashboard layout
+- [x] Worker preview verification
+- [ ] Production end-to-end verification
+- [ ] Investigation configuration controls
+- [ ] Progress indicator for long investigations
 - [ ] Entity explorer
 - [ ] Source explorer
 - [ ] Relationship explorer
 - [ ] Mind map
 - [ ] Timeline
-- [ ] Evidence panel
+- [ ] Detailed evidence panel
+
+The V2 dashboard successfully renders a real `Ramzul Mazwan Ramli` investigation in the Worker version preview. Production currently reports `Failed to fetch`, so the UI is not yet considered production-complete.
 
 ## Phase 8 — Reporting
 
@@ -192,14 +207,15 @@ Status: FUTURE
 
 ## Current Priority
 
-1. Test the new person-candidate grouping with the golden identities.
-2. Verify that overlapping names such as `Ramzul Ramli`, `Ramzul Mazwan Ramli`, and `Ramzulhakim Ramli` remain separate candidates unless corroborating signals connect them.
-3. Preserve complete source/evidence provenance.
-4. Improve confidence calibration so 1.00 never implies certainty.
-5. Add stronger cross-source corroboration.
-6. Run the golden investigations and compare false merges/false splits.
-7. Only after those pass, increase recursion depth/budgets.
+1. Fix production `Failed to fetch` and verify the live Worker API from the production URL.
+2. Verify CORS, production route/path and environment bindings.
+3. Preserve complete source/evidence provenance for every surfaced discovery.
+4. Improve entity-noise filtering.
+5. Improve confidence calibration so high scores never imply certainty.
+6. Strengthen cross-source identity corroboration.
+7. Run the golden identity tests.
 8. Build relationship/graph structures.
-9. Build UI and reporting.
+9. Add reporting/export.
+10. Only after these foundations pass, increase crawl budgets or add advanced OSINT modules.
 
 Do not jump directly to unrestricted crawling.
