@@ -1,5 +1,3 @@
-import app from "./investigate.js";
-
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -17,7 +15,23 @@ function withCors(response) {
   });
 }
 
-async function handleRoot(request, env, ctx) {
+function jsonError(stage, error, status = 500) {
+  return Response.json(
+    {
+      status: "error",
+      stage,
+      message: error?.message || String(error || "Unknown worker error"),
+    },
+    { status, headers: CORS_HEADERS }
+  );
+}
+
+async function loadApp() {
+  const module = await import("./investigate.js");
+  return module.default;
+}
+
+async function handleRoot(request, env, ctx, app) {
   const response = await app.fetch(request, env, ctx);
   const headers = new Headers(response.headers);
   const contentType = headers.get("content-type") || "";
@@ -26,7 +40,6 @@ async function handleRoot(request, env, ctx) {
 
   let html = await response.text();
 
-  // Keep the public UI neutral: no personal/family name is pre-filled or suggested.
   html = html
     .replace('placeholder="e.g. Ramzul Mazwan Ramli"', 'placeholder="Enter a name or search term..."')
     .replace(
@@ -50,11 +63,22 @@ export default {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
 
-    const url = new URL(request.url);
-    const response = url.pathname === "/"
-      ? await handleRoot(request, env, ctx)
-      : await app.fetch(request, env, ctx);
+    let app;
+    try {
+      app = await loadApp();
+    } catch (error) {
+      return jsonError("module-load", error, 500);
+    }
 
-    return withCors(response);
+    try {
+      const url = new URL(request.url);
+      const response = url.pathname === "/"
+        ? await handleRoot(request, env, ctx, app)
+        : await app.fetch(request, env, ctx);
+
+      return withCors(response);
+    } catch (error) {
+      return jsonError("worker-fetch", error, 500);
+    }
   },
 };
