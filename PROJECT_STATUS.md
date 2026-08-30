@@ -1,6 +1,6 @@
 # Free OSINT Explorer — Project Status
 
-Last updated: 2026-08-27
+Last updated: 2026-08-31
 
 ## Goal
 
@@ -14,20 +14,21 @@ Phase 1  Search                 NAME QUERY FAN-OUT WORKING
 Phase 2  Web Reading            COMPLETE (core)
 Phase 3  Entity Extraction      INITIAL IMPLEMENTATION / ACCOUNT EXTRACTION WORKING
 Phase 4  Discovery Intelligence WORKING / REFINEMENT NEEDED
-Phase 5  Recursive Crawler      CONTROLLED WORKFLOW / TESTED TO DEPTH 1
-Phase 6  Knowledge Graph        PLANNED
-Phase 7  Investigation UI       FIRST WEB UI IMPLEMENTED
+Phase 5  Recursive Crawler       CONTROLLED WORKFLOW / TESTED TO DEPTH 1
+Phase 6  Knowledge Graph         PLANNED
+Phase 7  Investigation UI        EVIDENCE-V2 BACKEND + FIRST WEB UI IMPLEMENTED
 Phase 8  Reporting              PLANNED
-Phase 9  Advanced OSINT         FUTURE
+Phase 9  Advanced OSINT          FUTURE
 Phase 10 Optimization           FUTURE
 ```
 
 ## Infrastructure
 
 - Repository: `ramzulramli/free-osint-explorer`
+- Development branch: `ui-v2-live-investigation`
 - Worker: `free-osint-explorer`
 - Production: `https://free-osint-explorer.ramzul.workers.dev`
-- Wrangler entry point: `src/investigate.js` (legacy/current investigation module reference)
+- Wrangler entry point: `src/investigate.js` (current investigation/UI module reference)
 - Main Worker entry point: `src/index.js`
 - GitHub → Cloudflare deployment is configured.
 
@@ -49,10 +50,9 @@ Current behaviour:
 - Search results are scored against the query before being returned.
 - Weak results with no query-term evidence are filtered out.
 - Compound-name partial matches are deliberately scored lower than exact name matches.
-- **Name-like queries now fan out into up to five bounded variants:** original name, quoted exact name, `bin` form, `b.` form, and reversed order for two-token names; longer names also get compact/bin/binti-normalised variants where appropriate.
-- Duplicate URLs from variants are merged and ranked against the original query.
+- Name-like queries fan out into bounded variants and duplicate URLs are merged/ranked.
 - Provider, attempted-query and variant-count information is returned.
-- SearXNG fallback is bounded to a primary + one optional fallback instance to avoid Cloudflare Worker subrequest exhaustion.
+- SearXNG fallback is bounded to avoid Cloudflare Worker subrequest exhaustion.
 
 Status: **SEARCH + NAME DISCOVERY WORKING**
 
@@ -73,19 +73,20 @@ Controlled investigation workflow:
 6. Read selected pages.
 7. Extract entities and account candidates from page content.
 8. Aggregate evidence and preserve source provenance.
-9. Score and filter discoveries.
+9. Score discoveries with evidence-v2 identity assessment.
 
 Current API response includes:
 - investigation subject/query and confidence signal;
-- search provider and result count;
-- readable source list;
-- ranked person candidates;
-- related entities/accounts/locations;
+- candidate assessment with confidence level and reasons;
+- discovered accounts and other signal categories;
+- readable and failed source information;
+- evidence items with source provenance;
+- query history;
 - investigation statistics and limits.
 
 ### Investigation UI
 
-The Worker root `/` now serves a first usable web interface directly from the Worker. It provides:
+The Worker root `/` serves a usable web interface directly from the Worker. The current UI provides:
 - investigation search box;
 - loading state;
 - possible identity card;
@@ -96,13 +97,15 @@ The Worker root `/` now serves a first usable web interface directly from the Wo
 - basic investigation statistics;
 - responsive mobile layout.
 
-The UI deliberately labels confidence as a **match signal**, not proof of identity.
+**Next UI milestone: M6 Evidence UI** — expose the backend's assessment reasons, signal categories and source/read state as explicit evidence cards without implying that discovery equals proof of ownership.
 
 ## Recent End-to-End Tests
 
 ### `Fauzi Ariffin`
 
-The engine found a strong exact-name candidate across Facebook, Instagram and IMDb, while retaining `Mohd Fauzi Ariffin` separately. This validates name fan-out and candidate separation, but also shows that multi-source hits do not necessarily mean the same person.
+Current live investigation returned an exact-name candidate with confidence `0.5` / `moderate`. Five distinct search sources were discovered; three were successfully readable and two were blocked (Instagram HTTP 429 and LinkedIn HTTP 999). No independent identity attribute was corroborated. This is the expected direction for evidence-v2: source count alone does not create high identity confidence.
+
+The response also exposes four discovered social accounts separately from the candidate's corroborated identity attributes. These accounts must not be presented as proven ownership without independent corroboration.
 
 ### `Shazzuwan Zakaria`
 
@@ -110,11 +113,9 @@ The engine found an exact-name candidate plus an education-related long-form sou
 
 ### `Ramli Musa`
 
-Selected as the next identity-resolution test subject. The purpose of this test is to validate the expanded Malaysian-name query variants and, more importantly, whether the engine can keep multiple people with the same/common name separated rather than treating search-result volume as identity proof.
+Selected as the next identity-resolution test subject. The purpose of this test is to validate expanded Malaysian-name query variants and whether the engine can keep multiple people with the same/common name separated rather than treating search-result volume as identity proof.
 
-Live Worker execution was not completed from the current development environment, so this remains a pending end-to-end verification rather than a claimed result.
-
-**Conclusion:** the next product step is not another isolated search test. It is to turn raw search/page signals into source-attributed evidence and improve identity corroboration.
+**Conclusion:** the next product step is source-attributed evidence presentation and stronger identity corroboration, not simply increasing search volume.
 
 Persistent test details are kept in `TEST_NOTES.md`.
 
@@ -123,11 +124,12 @@ Persistent test details are kept in `TEST_NOTES.md`.
 Current limits remain deliberately conservative:
 
 - Search results: 5
-- Pages: 3 for `/investigate`
+- Pages: 5 for current investigation workflow
 - Ranked people: 10
 - Related signals: 15
 - Search requests: bounded by provider layer
-- Name query variants: maximum 5
+- Name query variants: bounded
+- Maximum investigation depth: 2
 
 **Do not increase crawl budgets yet.**
 
@@ -158,11 +160,11 @@ These are development test subjects. Results must be treated as public-source le
 1. Generic page-title fragments can still be emitted as `person_candidate` values.
 2. Entity/account duplicates can still appear across different searches and need stronger consolidation.
 3. Organisation attribution needs stronger source-level corroboration.
-4. Confidence scoring can reach high values without representing actual certainty; calibration is still required.
+4. Confidence scoring needs further calibration against known identity ground truth.
 5. Related-person account matches must remain separate unless independently corroborated.
 6. Public SearXNG instances remain an availability/quality dependency.
-7. Live production verification of the current UI still needs to be performed after deployment.
-8. The current UI is intentionally minimal; investigation history, graph visualization and export/reporting are not implemented yet.
+7. Live production verification of the current UI is still required after each meaningful deployment.
+8. The current UI is intentionally minimal; evidence cards, investigation history, graph visualization and export/reporting are not fully implemented yet.
 9. Public contact details may be extracted when openly published, but private residential addresses should not be automatically harvested or displayed.
 10. Current extraction does not distinguish strongly enough between a person who owns/controls a profile and a person merely mentioned by a page.
 
@@ -183,4 +185,4 @@ Do not get stuck in endless isolated search tests. Each test must validate or im
 
 ## Resume Note
 
-**Current engineering milestone: search name fan-out expanded to five bounded variants. Next coding milestone: evidence-backed signal cards + stronger entity/identity corroboration, followed by graph and reporting. `Ramli Musa` is the pending live verification test.**
+**Current engineering milestone: evidence-v2 scoring is working and has been validated with `Fauzi Ariffin`. Next coding milestone: M6 evidence-backed signal cards + explicit corroboration state, followed by graph and reporting. `Ramli Musa` remains the pending identity-resolution verification test.**
