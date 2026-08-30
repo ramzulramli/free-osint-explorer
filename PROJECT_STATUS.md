@@ -97,13 +97,13 @@ The Worker root `/` serves a usable web interface directly from the Worker. The 
 - basic investigation statistics;
 - responsive mobile layout.
 
-**Next UI milestone: M6 Evidence UI** — expose the backend's assessment reasons, signal categories and source/read state as explicit evidence cards without implying that discovery equals proof of ownership.
+**M6 Evidence UI is now implemented in the current development branch.** The UI exposes assessment reasons, evidence/signal categories, source provenance and read/failed state without implying that discovery equals proof of ownership.
 
 ## Recent End-to-End Tests
 
 ### `Fauzi Ariffin`
 
-Current live investigation returned an exact-name candidate with confidence `0.5` / `moderate`. Five distinct search sources were discovered; three were successfully readable and two were blocked (Instagram HTTP 429 and LinkedIn HTTP 999). No independent identity attribute was corroborated. This is the expected direction for evidence-v2: source count alone does not create high identity confidence.
+Current live investigation returned an exact-name candidate with evidence-v2 assessment confidence `0.5` / `moderate`. Five distinct search sources were discovered; three were successfully readable and two were blocked (Instagram HTTP 429 and LinkedIn HTTP 999). No independent identity attribute was corroborated. This is the expected direction for evidence-v2: source count alone does not create high identity confidence.
 
 The response also exposes four discovered social accounts separately from the candidate's corroborated identity attributes. These accounts must not be presented as proven ownership without independent corroboration.
 
@@ -164,19 +164,19 @@ These are development test subjects. Results must be treated as public-source le
 5. Related-person account matches must remain separate unless independently corroborated.
 6. Public SearXNG instances remain an availability/quality dependency.
 7. Live production verification of the current UI is still required after each meaningful deployment.
-8. The current UI is intentionally minimal; evidence cards, investigation history, graph visualization and export/reporting are not fully implemented yet.
+8. The current UI is intentionally minimal; investigation history, graph visualization and export/reporting are not fully implemented yet.
 9. Public contact details may be extracted when openly published, but private residential addresses should not be automatically harvested or displayed.
 10. Current extraction does not distinguish strongly enough between a person who owns/controls a profile and a person merely mentioned by a page.
 
 ## Immediate Next Steps — Build, Don't Just Test
 
-1. **Evidence-backed signal cards** — work, education, public social accounts, broad location and explicitly published public contact channels, each with source provenance.
-2. **Entity-noise filtering** — stop page titles, headings and unrelated names from becoming person candidates.
-3. **Identity corroboration** — score independent evidence dimensions separately: name, accounts, organisation, location, education/work overlap, contradictions and source quality.
-4. **Relationship graph v1** — connect candidate ↔ account ↔ organisation ↔ location ↔ source using existing data.
-5. **Investigation history** — persist recent investigations in the browser/session without requiring an always-on database.
-6. **Report/export** — generate a clean investigation summary with evidence and source links.
-7. **Production verification** — run the real Worker UI after each meaningful deployment.
+1. **M6.1 — Entity-noise filtering**: stop page titles, headings and unrelated names from becoming person candidates.
+2. **M6.2 — Identity corroboration**: score independent evidence dimensions separately: name, accounts, organisation, location, education/work overlap, contradictions and source quality.
+3. **M6.3 — Golden identity test set**: use controlled cases to calibrate false merges and false splits.
+4. **M7 — Relationship graph v1**: connect candidate ↔ account ↔ organisation ↔ location ↔ source using existing data.
+5. **M8 — Investigation history**: persist recent investigations in the browser/session without requiring an always-on database.
+6. **M9 — Report/export**: generate a clean investigation summary with evidence and source links.
+7. Verify the live Worker after each meaningful deployment.
 8. Only then consider broader crawl budgets and advanced OSINT modules.
 
 ## Development Rule
@@ -185,4 +185,4 @@ Do not get stuck in endless isolated search tests. Each test must validate or im
 
 ## Resume Note
 
-**Current engineering milestone: evidence-v2 scoring is working and has been validated with `Fauzi Ariffin`. Next coding milestone: M6 evidence-backed signal cards + explicit corroboration state, followed by graph and reporting. `Ramli Musa` remains the pending identity-resolution verification test.**
+**Current engineering milestone: M6 Evidence UI is implemented and evidence-v2 scoring has been validated with `Fauzi Ariffin`. Next coding milestone: M6.1 entity-noise filtering and M6.2 stronger corroboration. `Ramli Musa` remains the pending identity-resolution verification test.**
