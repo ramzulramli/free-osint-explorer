@@ -1,10 +1,10 @@
 # Free OSINT Explorer — Test Notes
 
-Last updated: 2026-08-26
+Last updated: 2026-08-31
 
 ## Purpose
 
-This file preserves end-to-end test observations so development can resume after a chat reset without relying on conversation history.
+Preserve end-to-end test observations and implementation decisions so development can resume after a chat reset without relying on conversation history.
 
 ## Test: `Fauzi Ariffin`
 
@@ -12,81 +12,79 @@ Observed behaviour:
 
 - Exact two-token name produced a top `Fauzi Ariffin` candidate with multiple public-source hits.
 - Sources included Facebook, Instagram and IMDb.
-- A separate `Mohd Fauzi Ariffin` candidate was retained instead of being merged automatically.
-- No organisation or location was reliably attributed by the current extraction pipeline.
-- Public phone/email fields were empty.
+- A separate `Mohd Fauzi Ariffin` candidate was retained instead of being merged automatically in the earlier pipeline.
+- Current evidence-v2 assessment correctly stayed moderate when no independent identity attribute was corroborated.
+- Instagram returned HTTP 429 and LinkedIn returned HTTP 999 during one run; blocked pages are not corroboration.
 
-Interpretation:
+Key product lesson:
 
-- Name fan-out is useful for common Malaysian names.
-- Source diversity is a useful identity signal, but the current score must not imply identity proof.
-- IMDb/other unrelated public profiles demonstrate why source-level corroboration is required before merging candidates.
+Source count alone must not drive identity confidence. Accounts discovered from URLs are useful leads but are not proof of ownership.
 
 ## Test: `Shazzuwan Zakaria`
 
 Observed behaviour:
 
-- Exact-name candidate was found with confidence signal around 0.75.
-- Public sources included an Instagram profile and a long-form education-related article.
+- Exact-name candidate was found with useful public context.
+- Sources included an Instagram profile and a long-form education-related article.
 - The article produced useful context signals including Malaysia/Selangor, education/cikgu terminology, Bahasa, Matematik, and year references.
-- The extractor also produced noisy person candidates such as page-title fragments and names mentioned in the same article.
-- A spelling variant `Shazwan Zakaria` was retained as a separate candidate.
-- No phone or email was extracted.
+- The earlier extractor produced noisy person candidates such as page-title fragments and unrelated names mentioned in the same article.
+- A spelling variant `Shazwan Zakaria` was retained separately.
 
 Key product lesson:
 
-The engine is now finding useful public context, but it needs **evidence attribution** rather than simply dumping extracted entities. A signal should show:
+Entity extraction needs source context. A person name mentioned on a page is not automatically the person represented by that page.
 
-1. signal type;
-2. value;
-3. source title;
-4. source URL;
-5. confidence/reason;
-6. whether it is directly associated with the top candidate or merely mentioned on the page.
+## M6 — Evidence-backed UI
 
-## Next implementation milestone
+Implemented:
 
-### Evidence-backed signal cards
+- `Possible identity` / primary subject presentation
+- candidate confidence signal
+- public account/profile signals
+- related organisations and locations
+- evidence trail
+- inspected source list
+- investigation health and crawl statistics
+- explicit UI language that public-source signals are not proof of identity
 
-Add first-class signal groups for:
+## M6.1 — Entity-noise filtering
 
-- Work / organisation
-- Education
-- Public social accounts
-- Public contact channels when explicitly published by the source
-- Broad location signals (city/state/country)
-- Dates / years where context is clear
+Implemented in `src/investigate.js`.
 
-Do not automatically harvest or display private residential addresses. Keep public-source provenance visible.
+Changes:
 
-### Identity corroboration
+- Person extraction now accepts a search/page context seed.
+- Candidate names must contain at least two plausible name tokens.
+- Known navigation/platform/location noise is rejected.
+- Candidate names must be represented by the search/page context rather than being accepted merely because they look like capitalized words.
+- Multi-token context matching is stricter for longer candidate names, reducing unrelated people mentioned in articles.
+- Search-result and page extraction both pass the investigation subject into person extraction.
+- Existing account extraction and evidence aggregation remain intact.
 
-For each candidate, calculate separate evidence dimensions instead of one opaque confidence score:
+This is intentionally a filtering improvement, not a claim that name-based matching can establish identity.
+
+## Next implementation milestone: M6.2
+
+Strengthen identity corroboration with separate evidence dimensions:
 
 - exact/near name match;
-- number of independent sources;
-- account-name match;
+- independent source count;
+- account-name/profile match;
 - organisation overlap;
 - location overlap;
 - education/work overlap;
 - contradictory evidence;
 - source quality.
 
-Do not merge people solely because names are similar.
+The final confidence should explain which dimensions actually contributed. Do not increase crawl depth simply to obtain a higher score.
 
-### UI target
+## M7 — Relationship graph v1
 
-Replace the current mostly-flat result presentation with:
+Planned relationship model:
 
-- `Possible identity`
-- `Why this matched`
-- `Public profiles`
-- `Work & education`
-- `Location signals`
-- `Other public signals`
-- `Sources`
+`candidate ↔ account ↔ organisation ↔ location ↔ source`
 
-Every signal should be clickable back to its source.
+Every edge should retain provenance so the graph does not imply a relationship that the source did not establish.
 
 ## Regression subjects
 
@@ -97,3 +95,5 @@ Keep these as development tests:
 - `Ramzulhakim Ramli` — different-person separation test
 - `Fauzi Ariffin` — common Malaysian name / multi-source test
 - `Shazzuwan Zakaria` — context-rich page / noisy extraction test
+
+Default UI query must remain generic; do not hard-code the user's or user's father's name as the application default.
