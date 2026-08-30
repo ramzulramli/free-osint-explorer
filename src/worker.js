@@ -8,21 +8,24 @@ const CORS_HEADERS = {
 function withCors(response) {
   const headers = new Headers(response.headers);
   for (const [key, value] of Object.entries(CORS_HEADERS)) headers.set(key, value);
+  const status = Number(response.status);
+  const safeStatus = Number.isInteger(status) && status >= 200 && status <= 599 ? status : 200;
   return new Response(response.body, {
-    status: response.status,
+    status: safeStatus,
     statusText: response.statusText,
     headers,
   });
 }
 
 function jsonError(stage, error, status = 500) {
+  const safeStatus = Number.isInteger(status) && status >= 200 && status <= 599 ? status : 500;
   return Response.json(
     {
       status: "error",
       stage,
       message: error?.message || String(error || "Unknown worker error"),
     },
-    { status, headers: CORS_HEADERS }
+    { status: safeStatus, headers: CORS_HEADERS }
   );
 }
 
