@@ -1,50 +1,94 @@
 # Free OSINT Explorer — Test Notes
 
-Last updated: 2026-08-26
+Last updated: 2026-08-30
 
 ## Purpose
 
 This file preserves end-to-end test observations so development can resume after a chat reset without relying on conversation history.
 
+## Deployment / Worker regression — 2026-08-30
+
+Recent Cloudflare Worker versions exposed response-handling failures while the live investigation UI was being connected to the Worker.
+
+Observed errors included:
+
+- `Unexpected token '<', "<!DOCTYPE ..." is not valid JSON`
+- Cloudflare Worker Error 1101
+- `Responses may only be constructed with status codes in the range 200 to 599, inclusive.`
+- `Application returned a non-Response value`
+
+The fixes were developed on `svgui-v2-live-investigation` and then synchronized back to `main`. Cloudflare build history and Version History are separate: a successful build/version does not necessarily mean it is the active production deployment when branch/version controls require manual promotion.
+
+Main was subsequently synchronized at commit `d80b3f9cdb16a8ee20ad8c4beaea399939dfeedb`.
+
 ## Test: `Fauzi Ariffin`
 
-Observed behaviour:
+Observed behaviour from the live Worker:
 
-- Exact two-token name produced a top `Fauzi Ariffin` candidate with multiple public-source hits.
-- Sources included Facebook, Instagram and IMDb.
-- A separate `Mohd Fauzi Ariffin` candidate was retained instead of being merged automatically.
-- No organisation or location was reliably attributed by the current extraction pipeline.
-- Public phone/email fields were empty.
+- Investigation returned `status: success` with structured JSON.
+- Exact `Fauzi Ariffin` candidate was found.
+- Public profile signals included Facebook, Instagram and IMDb.
+- Instagram failed with HTTP 429.
+- LinkedIn failed with HTTP 999.
+- Failed sources were retained under `failed` instead of being counted as successful evidence.
+- A later evidence-v2 run returned confidence `0.5` / `moderate`.
+- The assessment correctly explained that the name was corroborated but no independent identity attribute was corroborated.
 
-Interpretation:
+Key lesson:
 
-- Name fan-out is useful for common Malaysian names.
-- Source diversity is a useful identity signal, but the current score must not imply identity proof.
-- IMDb/other unrelated public profiles demonstrate why source-level corroboration is required before merging candidates.
+Source count alone must not imply identity. The scoring layer needs independent corroboration dimensions.
 
 ## Test: `Shazzuwan Zakaria`
 
 Observed behaviour:
 
-- Exact-name candidate was found with confidence signal around 0.75.
-- Public sources included an Instagram profile and a long-form education-related article.
-- The article produced useful context signals including Malaysia/Selangor, education/cikgu terminology, Bahasa, Matematik, and year references.
+- Exact-name candidate was found with useful education/context signals.
+- Public sources included social profile and long-form education-related material.
+- Context signals included Malaysia/Selangor, education/cikgu terminology, Bahasa, Matematik and year references.
 - The extractor also produced noisy person candidates such as page-title fragments and names mentioned in the same article.
-- A spelling variant `Shazwan Zakaria` was retained as a separate candidate.
-- No phone or email was extracted.
+- `Shazwan Zakaria` remained a separate spelling variant.
 
 Key product lesson:
 
-The engine is now finding useful public context, but it needs **evidence attribution** rather than simply dumping extracted entities. A signal should show:
+Every signal needs source attribution and association status. A person merely mentioned on a page must not automatically become a candidate associated with the subject.
 
-1. signal type;
-2. value;
-3. source title;
-4. source URL;
-5. confidence/reason;
-6. whether it is directly associated with the top candidate or merely mentioned on the page.
+## Test: `Ramli Musa`
 
-## Next implementation milestone
+This remains a same-name separation regression test.
+
+A strong-looking public academic identity can be returned for the common name, but that does not mean it is the same person as another `Ramli Musa`. The engine must keep search relevance and identity resolution as separate layers.
+
+Previously observed extraction noise included page-title/content fragments such as:
+
+- `Ramli Musa Gender`
+- `Negeri Sembilan Musa`
+- `Dr Ramli Musa Knowledge`
+
+These should not become meaningful person candidates.
+
+## Test: `Fauzi Ariffin` scoring-v2 regression
+
+The evidence-v2 output now exposes an explicit assessment:
+
+- confidence level;
+- reason for the score;
+- corroboration count;
+- independent identity-attribute status.
+
+For the observed run:
+
+```text
+confidence: 0.5
+level: moderate
+reasons:
+- Name corroborated by 1 evidence item
+- 5 distinct sources
+- no independent identity attribute corroborated
+```
+
+This is preferable to the earlier high-looking score because it makes the lack of independent corroboration visible.
+
+## Current implementation target
 
 ### Evidence-backed signal cards
 
@@ -70,13 +114,14 @@ For each candidate, calculate separate evidence dimensions instead of one opaque
 - location overlap;
 - education/work overlap;
 - contradictory evidence;
-- source quality.
+- source quality;
+- direct profile ownership vs merely-mentioned person where detectable.
 
 Do not merge people solely because names are similar.
 
 ### UI target
 
-Replace the current mostly-flat result presentation with:
+The live dashboard should group results into:
 
 - `Possible identity`
 - `Why this matched`
@@ -86,7 +131,7 @@ Replace the current mostly-flat result presentation with:
 - `Other public signals`
 - `Sources`
 
-Every signal should be clickable back to its source.
+Every signal should be clickable back to its source where available.
 
 ## Regression subjects
 
@@ -97,3 +142,4 @@ Keep these as development tests:
 - `Ramzulhakim Ramli` — different-person separation test
 - `Fauzi Ariffin` — common Malaysian name / multi-source test
 - `Shazzuwan Zakaria` — context-rich page / noisy extraction test
+- `Ramli Musa` — common-name / false-positive separation test
