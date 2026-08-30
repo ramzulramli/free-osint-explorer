@@ -5,18 +5,6 @@ const CORS_HEADERS = {
   "Access-Control-Max-Age": "86400",
 };
 
-function withCors(response) {
-  const headers = new Headers(response.headers);
-  for (const [key, value] of Object.entries(CORS_HEADERS)) headers.set(key, value);
-  const status = Number(response.status);
-  const safeStatus = Number.isInteger(status) && status >= 200 && status <= 599 ? status : 200;
-  return new Response(response.body, {
-    status: safeStatus,
-    statusText: response.statusText,
-    headers,
-  });
-}
-
 function jsonError(stage, error, status = 500) {
   const safeStatus = Number.isInteger(status) && status >= 200 && status <= 599 ? status : 500;
   return Response.json(
@@ -36,14 +24,15 @@ async function loadApp() {
 
 async function handleRoot(request, env, ctx, app) {
   const response = await app.fetch(request, env, ctx);
+  if (!(response instanceof Response)) {
+    return Response.json({ status: "error", stage: "root", message: "Application returned an invalid response" }, { status: 500, headers: CORS_HEADERS });
+  }
+
   const headers = new Headers(response.headers);
   const contentType = headers.get("content-type") || "";
-
   if (!contentType.includes("text/html")) return response;
 
-  let html = await response.text();
-
-  html = html
+  const html = (await response.text())
     .replace('placeholder="e.g. Ramzul Mazwan Ramli"', 'placeholder="Enter a name or search term..."')
     .replace(
       "Free public-source workflow • bounded search depth to control cost and noise",
@@ -52,10 +41,10 @@ async function handleRoot(request, env, ctx, app) {
 
   headers.set("content-type", "text/html; charset=UTF-8");
   headers.set("cache-control", "no-store");
+  headers.set("Access-Control-Allow-Origin", "*");
 
   return new Response(html, {
-    status: response.status,
-    statusText: response.statusText,
+    status: response.status >= 200 && response.status <= 599 ? response.status : 200,
     headers,
   });
 }
@@ -69,6 +58,9 @@ export default {
     let app;
     try {
       app = await loadApp();
+      if (!app || typeof app.fetch !== "function") {
+        throw new Error("investigate.js did not export a valid fetch handler");
+      }
     } catch (error) {
       return jsonError("module-load", error, 500);
     }
@@ -79,7 +71,13 @@ export default {
         ? await handleRoot(request, env, ctx, app)
         : await app.fetch(request, env, ctx);
 
-      return withCors(response);
+      if (!(response instanceof Response)) {
+        return jsonError("invalid-response", new Error("Application returned a non-Response value"), 500);
+      }
+
+      // Do not reconstruct the response body. Returning the original Response
+      // avoids consuming/losing its ReadableStream in the Worker runtime.
+      return response;
     } catch (error) {
       return jsonError("worker-fetch", error, 500);
     }
