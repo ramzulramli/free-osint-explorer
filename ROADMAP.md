@@ -1,7 +1,6 @@
 # Free OSINT Explorer — Roadmap
 
 ## Phase 0 — Infrastructure
-
 Status: COMPLETE
 
 - [x] GitHub repository
@@ -11,7 +10,6 @@ Status: COMPLETE
 - [x] Browser-based development
 
 ## Phase 1 — Search
-
 Status: RELEVANCE VALIDATION WORKING
 
 - [x] `/search`
@@ -34,7 +32,6 @@ Status: RELEVANCE VALIDATION WORKING
 - [ ] Broader noisy-result detection
 
 ## Phase 2 — Web Reading
-
 Status: COMPLETE (CORE)
 
 - [x] `/fetch`
@@ -49,7 +46,6 @@ Status: COMPLETE (CORE)
 - [ ] PDF handling
 
 ## Phase 3 — Entity Extraction
-
 Status: INITIAL IMPLEMENTATION / ACCOUNT EXTRACTION WORKING
 
 - [x] Person candidates
@@ -71,8 +67,7 @@ Status: INITIAL IMPLEMENTATION / ACCOUNT EXTRACTION WORKING
 - [ ] More language-aware extraction
 
 ## Phase 4 — Discovery Intelligence
-
-Status: WORKING / IDENTITY RESOLUTION INITIAL IMPLEMENTATION
+Status: WORKING / EVIDENCE-V2 INITIAL IMPLEMENTATION
 
 - [x] `/investigate`
 - [x] Seed search
@@ -90,7 +85,9 @@ Status: WORKING / IDENTITY RESOLUTION INITIAL IMPLEMENTATION
 - [x] Initial person-candidate grouping
 - [x] Initial identity-resolution scoring
 - [x] Account-to-candidate association
-- [ ] Evidence/source provenance completeness
+- [x] Evidence-v2 confidence assessment
+- [x] Read/failed source provenance
+- [ ] Complete signal-to-candidate mapping
 - [ ] Better entity confidence
 - [ ] Source confidence
 - [ ] Related-query generation
@@ -98,7 +95,6 @@ Status: WORKING / IDENTITY RESOLUTION INITIAL IMPLEMENTATION
 - [ ] Cross-source corroboration model
 
 ## Phase 5 — Recursive Crawler
-
 Status: CONTROLLED INITIAL WORKFLOW / DEPTH-1 TESTED
 
 - [x] Seed investigation
@@ -117,7 +113,6 @@ Status: CONTROLLED INITIAL WORKFLOW / DEPTH-1 TESTED
 Do not increase crawl budgets until the golden investigation tests pass.
 
 ## Phase 6 — Knowledge Graph
-
 Status: PLANNED
 
 - [ ] Entity nodes
@@ -130,22 +125,25 @@ Status: PLANNED
 - [ ] Timeline
 
 ## Phase 7 — Investigation UI
+Status: FIRST UI IMPLEMENTED / EVIDENCE UI NEXT
 
-Status: PLANNED
-
-- [ ] Search interface
-- [ ] Investigation configuration
-- [ ] Progress indicator
-- [ ] Results page
+- [x] Search interface
+- [x] Loading/progress state
+- [x] Results page
+- [x] Possible identity card
+- [x] Candidate confidence signal
+- [x] Related signals
+- [x] Source explorer basics
+- [ ] Evidence-backed signal cards
+- [ ] Confidence explanation panel
+- [ ] Read/blocked source state
 - [ ] Entity explorer
-- [ ] Source explorer
 - [ ] Relationship explorer
 - [ ] Mind map
 - [ ] Timeline
-- [ ] Evidence panel
+- [ ] Investigation history
 
 ## Phase 8 — Reporting
-
 Status: PLANNED
 
 - [ ] Investigation summary
@@ -159,7 +157,6 @@ Status: PLANNED
 - [ ] Archive/export
 
 ## Phase 9 — Advanced OSINT
-
 Status: FUTURE
 
 Possible capabilities:
@@ -180,7 +177,6 @@ Possible capabilities:
 Only add capabilities where technically and legally appropriate and where free/public access is practical.
 
 ## Phase 10 — Optimization
-
 Status: FUTURE
 
 - [ ] Search caching
@@ -192,14 +188,14 @@ Status: FUTURE
 
 ## Current Priority
 
-1. Test the new person-candidate grouping with the golden identities.
-2. Verify that overlapping names such as `Ramzul Ramli`, `Ramzul Mazwan Ramli`, and `Ramzulhakim Ramli` remain separate candidates unless corroborating signals connect them.
-3. Preserve complete source/evidence provenance.
-4. Improve confidence calibration so 1.00 never implies certainty.
-5. Add stronger cross-source corroboration.
-6. Run the golden investigations and compare false merges/false splits.
+1. Build evidence-backed signal cards using the current evidence-v2 response.
+2. Map discovered accounts/signals separately from corroborated identity attributes.
+3. Preserve complete source/evidence provenance and read/blocked state.
+4. Improve entity-noise filtering.
+5. Strengthen cross-source identity corroboration.
+6. Run golden identity investigations and compare false merges/false splits.
 7. Only after those pass, increase recursion depth/budgets.
 8. Build relationship/graph structures.
-9. Build UI and reporting.
+9. Build reporting/export.
 
 Do not jump directly to unrestricted crawling.
