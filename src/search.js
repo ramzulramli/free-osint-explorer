@@ -6,22 +6,17 @@ function normalize(v){return String(v||"").toLowerCase().replace(/https?:\/\/[^\
 function terms(q){return [...new Set(normalize(q).split(" ").filter(x=>x.length>=2))];}
 function isNameLike(q){const t=terms(q);return t.length>=2&&t.length<=5&&t.every(x=>/^[a-z]+$/.test(x));}
 
-// Generate deliberately small search expansion for Malaysian-style names.
-// Keep the original query first so ranking remains anchored to the user's input.
 function buildQueryVariants(q){
   q=String(q||"").trim();
   if(!isNameLike(q))return[q];
   const p=q.split(/\s+/).filter(Boolean);
   const out=[q,`"${q}"`];
-  const lower=q.toLowerCase();
   const hasBin=/\b(bin|binti)\b/i.test(q);
-
   if(p.length===2&&!hasBin){
     out.push(`"${p[0]} bin ${p[1]}"`);
     out.push(`"${p[0]} b. ${p[1]}"`);
     out.push(`"${p[1]} ${p[0]}"`);
   } else if(p.length>=3){
-    // Search the compact form as well as the common bin/binti-normalised form.
     const compact=p.filter(x=>!/^binti?$/i.test(x));
     if(compact.length>=2&&compact.length<p.length)out.push(`"${compact.join(" ")}"`);
     if(!hasBin){
@@ -39,7 +34,7 @@ function parseDDG(html){const out=[],seen=new Set();for(const block of html.spli
 function challenge(html){return /captcha|robot|unusual traffic|bot detection|challenge/i.test(String(html||""));}
 async function duckduckgo(q){const attempts=["https://html.duckduckgo.com/html/","https://lite.duckduckgo.com/lite/"];let status=0,challenged=false;for(const url of attempts){const r=await fetch(url,{method:"POST",headers:{"User-Agent":SEARCH_USER_AGENT,"Accept":"text/html","Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({q}).toString()});const html=await r.text();status=r.status;if(!r.ok)continue;if(challenge(html)){challenged=true;continue;}const raw=parseDDG(html);if(raw.length)return{provider:"duckduckgo",query:q,results:rank(raw,q)};}if(challenged)throw new Error("DuckDuckGo challenge response");throw new Error(`Search provider returned ${status||"no"} usable results`);}
 function searxUrl(base,q){const u=new URL(String(base||DEFAULT_SEARXNG_URL).replace(/\/+$/,""));u.pathname=u.pathname.replace(/\/$/,"")+"/search";u.searchParams.set("q",q);u.searchParams.set("format","json");u.searchParams.set("language","en");u.searchParams.set("categories","general");return u;}
-async function searxng(q,env={}){const instances=[env.SEARXNG_URL||DEFAULT_SEARXNG_URL,env.SEARXNG_FALLBACK_URL].filter(Boolean);let last="";for(const instance of [...new Set(instances)].slice(0,2)){try{const r=await fetch(searxUrl(instance,q),{headers:{"User-Agent":SEARCH_USER_AGENT,"Accept":"application/json"}});const text=await r.text();if(!r.ok)throw new Error(`HTTP ${r.status}`);const data=JSON.parse(text);const raw=(data.results||[]).map(x=>({title:stripHtml(x.title),url:String(x.url||x.link||""),snippet:stripHtml(x.content||x.snippet||"")})).filter(x=>/^https?:\/\//i.test(x.url));const results=rank(raw,q);if(results.length)return{provider:"searxng",instance,query:q,results};last=`${instance}: empty results`;}catch(e){last=`${instance}: ${e.message}`;}}throw new Error(`SearXNG failed: ${last}`);}
+async function searxng(q,env={}){const instances=[env.SEARXNG_URL||DEFAULT_SEARXNG_URL,env.SEARXNG_FALLBACK_URL].filter(Boolean);let last="";for(const instance of [...new Set(instances)].slice(0,2)){try{const r=await fetch(searxUrl(instance,q),{headers:{"User-Agent":SEARCH_USER_AGENT,"Accept":"application/json"}});const text=await r.text();if(!r.ok)throw new Error(`HTTP ${r.status}`);const contentType=(r.headers.get("content-type")||"").toLowerCase();if(!contentType.includes("application/json")){const preview=text.replace(/\s+/g," ").slice(0,120);throw new Error(`Non-JSON response (${contentType||"unknown content type"})${preview?`: ${preview}`:""}`);}let data;try{data=JSON.parse(text);}catch(error){throw new Error(`Invalid JSON response: ${error.message}`);}const raw=(data.results||[]).map(x=>({title:stripHtml(x.title),url:String(x.url||x.link||""),snippet:stripHtml(x.content||x.snippet||"")})).filter(x=>/^https?:\/\//i.test(x.url));const results=rank(raw,q);if(results.length)return{provider:"searxng",instance,query:q,results};last=`${instance}: empty results`;}catch(e){last=`${instance}: ${e.message}`;}}throw new Error(`SearXNG failed: ${last}`);}
 async function searchSingle(q,env={},provider=null){const p=String(provider||env.SEARCH_PROVIDER||"auto").toLowerCase();if(p==="duckduckgo")return duckduckgo(q);if(p==="searxng")return searxng(q,env);try{return{...(await duckduckgo(q)),attemptedProviders:["duckduckgo"]};}catch(e){const r=await searxng(q,env);return{...r,attemptedProviders:["duckduckgo:error:"+e.message,"searxng"]};}}
 async function search(query,env={},requestedProvider=null){const variants=buildQueryVariants(query);if(variants.length===1)return searchSingle(query,env,requestedProvider);const merged=new Map(),attemptedQueries=[],attemptedProviders=[];for(const q of variants){try{const r=await searchSingle(q,env,requestedProvider);attemptedQueries.push(q);if(r.attemptedProviders)attemptedProviders.push(...r.attemptedProviders);for(const item of r.results||[]){const relevance=score(item,query).score;const value={...item,relevance:Math.max(item.relevance||0,relevance),queryVariant:q};const old=merged.get(item.url);if(!old||value.relevance>old.relevance)merged.set(item.url,value);}}catch(e){attemptedQueries.push(q);attemptedProviders.push(`variant:error:${e.message}`);}}const results=[...merged.values()].sort((a,b)=>b.relevance-a.relevance).slice(0,5);if(!results.length)throw new Error("All search variants failed");return{provider:attemptedProviders.includes("searxng")?"searxng":"duckduckgo",query,results,attemptedProviders:[...new Set(attemptedProviders)],attemptedQueries,queryVariantCount:variants.length};}
 export {search,duckduckgo,searxng,DEFAULT_SEARXNG_URL,buildQueryVariants};

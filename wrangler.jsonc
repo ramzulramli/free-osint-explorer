@@ -1,6 +1,6 @@
 {
   "name": "free-osint-explorer",
-  "main": "src/investigate.js",
+  "main": "src/worker.js",
   "compatibility_date": "2026-08-21",
   "vars": {
     "SEARCH_PROVIDER": "auto",
