@@ -22,11 +22,33 @@ async function loadApp() {
   return module.default;
 }
 
-async function handleRoot(request, env, ctx, app) {
-  const response = await app.fetch(request, env, ctx);
-  if (!(response instanceof Response)) {
-    return Response.json({ status: "error", stage: "root", message: "Application returned an invalid response" }, { status: 500, headers: CORS_HEADERS });
+async function normalizeAppResponse(value, { html = false } = {}) {
+  if (value instanceof Response) return value;
+
+  if (html) {
+    if (typeof value === "string") {
+      return new Response(value, {
+        status: 200,
+        headers: { ...CORS_HEADERS, "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" },
+      });
+    }
+    throw new Error("Application root returned an unsupported value");
   }
+
+  if (value !== null && typeof value === "object") {
+    return Response.json(value, { status: 200, headers: CORS_HEADERS });
+  }
+
+  if (typeof value === "string") {
+    return new Response(value, { status: 200, headers: { ...CORS_HEADERS, "content-type": "text/plain; charset=UTF-8" } });
+  }
+
+  throw new Error("Application returned an unsupported value");
+}
+
+async function handleRoot(request, env, ctx, app) {
+  const raw = await app.fetch(request, env, ctx);
+  const response = await normalizeAppResponse(raw, { html: true });
 
   const headers = new Headers(response.headers);
   const contentType = headers.get("content-type") || "";
@@ -67,17 +89,10 @@ export default {
 
     try {
       const url = new URL(request.url);
-      const response = url.pathname === "/"
-        ? await handleRoot(request, env, ctx, app)
-        : await app.fetch(request, env, ctx);
+      if (url.pathname === "/") return await handleRoot(request, env, ctx, app);
 
-      if (!(response instanceof Response)) {
-        return jsonError("invalid-response", new Error("Application returned a non-Response value"), 500);
-      }
-
-      // Do not reconstruct the response body. Returning the original Response
-      // avoids consuming/losing its ReadableStream in the Worker runtime.
-      return response;
+      const raw = await app.fetch(request, env, ctx);
+      return await normalizeAppResponse(raw);
     } catch (error) {
       return jsonError("worker-fetch", error, 500);
     }
