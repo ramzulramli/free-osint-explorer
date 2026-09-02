@@ -1,10 +1,24 @@
-# Free OSINT Explorer — Test Notes
+# Silk Stalker — Test Notes
 
-Last updated: 2026-08-30
+Last updated: 2026-09-03
 
 ## Purpose
 
 This file preserves end-to-end test observations so development can resume after a chat reset without relying on conversation history.
+
+## Product / UI wrap-up
+
+The investigation product is now branded **Silk Stalker** while the GitHub repository name remains `free-osint-explorer` and the free Cloudflare hostname remains unchanged.
+
+The normal browser workflow uses:
+
+- `Stalk a person` as the primary prompt;
+- `STALK` as the primary action;
+- `POST /investigate` with the subject in JSON rather than the query string.
+
+This keeps investigated names out of the visible browser address bar and normal request URL. Legacy GET `/investigate?q=...` remains supported for compatibility.
+
+The loading animation was attempted but is intentionally not a current priority.
 
 ## Deployment / Worker regression — 2026-08-30
 
@@ -17,9 +31,9 @@ Observed errors included:
 - `Responses may only be constructed with status codes in the range 200 to 599, inclusive.`
 - `Application returned a non-Response value`
 
-The fixes were developed on `svgui-v2-live-investigation` and then synchronized back to `main`. Cloudflare build history and Version History are separate: a successful build/version does not necessarily mean it is the active production deployment when branch/version controls require manual promotion.
+The fixes were developed on the UI development branch and then synchronized back to `main`. Cloudflare build history and Version History are separate: a successful build/version does not necessarily mean it is the active production deployment when branch/version controls require manual promotion.
 
-Main was subsequently synchronized at commit `d80b3f9cdb16a8ee20ad8c4beaea399939dfeedb`.
+The current Worker entry point is `src/worker.js` and Wrangler points to that file.
 
 ## Test: `Fauzi Ariffin`
 
@@ -68,7 +82,7 @@ These should not become meaningful person candidates.
 
 ## Test: `Fauzi Ariffin` scoring-v2 regression
 
-The evidence-v2 output now exposes an explicit assessment:
+The evidence-v2 output exposes an explicit assessment:
 
 - confidence level;
 - reason for the score;
@@ -86,7 +100,7 @@ reasons:
 - no independent identity attribute corroborated
 ```
 
-This is preferable to the earlier high-looking score because it makes the lack of independent corroboration visible.
+This is preferable to an earlier high-looking score because it makes the lack of independent corroboration visible.
 
 ## Current implementation target
 
