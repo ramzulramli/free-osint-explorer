@@ -1,72 +1,11 @@
 import runInvestigation from "./investigation-engine.js";
 import enrichWithImages from "./image-evidence.js";
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Accept",
-  "Access-Control-Max-Age": "86400",
-};
-
-function jsonError(stage, error, status = 500) {
-  const safeStatus = Number.isInteger(status) && status >= 200 && status <= 599 ? status : 500;
-  return Response.json(
-    { status: "error", stage, message: error?.message || String(error || "Unknown worker error") },
-    { status: safeStatus, headers: CORS_HEADERS }
-  );
-}
-
-async function loadApp() {
-  const module = await import("./investigate.js");
-  return module.default;
-}
-
-async function normalizeAppResponse(value, { html = false } = {}) {
-  if (value instanceof Response) return value;
-  if (html) {
-    if (typeof value === "string") return new Response(value, { status: 200, headers: { ...CORS_HEADERS, "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
-    throw new Error("Application root returned an unsupported value");
-  }
-  if (value !== null && typeof value === "object") return Response.json(value, { status: 200, headers: CORS_HEADERS });
-  if (typeof value === "string") return new Response(value, { status: 200, headers: { ...CORS_HEADERS, "content-type": "text/plain; charset=UTF-8" } });
-  throw new Error("Application returned an unsupported value");
-}
-
-async function handleRoot(request, env, ctx, app) {
-  const raw = await app.fetch(request, env, ctx);
-  const response = await normalizeAppResponse(raw, { html: true });
-  const headers = new Headers(response.headers);
-  if (!(headers.get("content-type") || "").includes("text/html")) return response;
-  const imagePanel = `<style id="foe-image-style">.foe-images{margin:22px 0;padding:18px;border:1px solid #233149;border-radius:16px;background:#0d1421}.foe-images h3{margin:0 0 12px}.foe-images-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}.foe-image{display:block;border:1px solid #233149;border-radius:12px;overflow:hidden;background:#111b2b;color:#edf4ff;text-decoration:none}.foe-image img{display:block;width:100%;height:150px;object-fit:cover}.foe-image div{padding:9px;font-size:12px}.foe-image small{display:block;color:#8fa1ba;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.foe-loading{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(6,9,18,.78);backdrop-filter:blur(4px)}.foe-loading-card{min-width:280px;max-width:calc(100vw - 40px);padding:24px;border:1px solid #233149;border-radius:18px;background:#0d1421;box-shadow:0 20px 60px rgba(0,0,0,.4);text-align:center}.foe-spinner{width:34px;height:34px;margin:0 auto 14px;border:3px solid #233149;border-top-color:#65e6b0;border-radius:50%;animation:foe-spin .8s linear infinite}@keyframes foe-spin{to{transform:rotate(360deg)}}.foe-loading-title{font-weight:700;font-size:16px}.foe-loading-text{margin-top:6px;color:#8fa1ba;font-size:13px}</style><script>(function(){const originalFetch=window.fetch.bind(window);function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\\"/g,'&quot;').replace(/'/g,'&#39;')}function loading(show){let el=document.getElementById('foe-loading');if(show){if(el)return;el=document.createElement('div');el.id='foe-loading';el.className='foe-loading';el.innerHTML='<div class="foe-loading-card"><div class="foe-spinner"></div><div class="foe-loading-title">Investigating public sources…</div><div class="foe-loading-text">Searching, checking pages and following useful signals. This can take a little while.</div></div>';document.body.appendChild(el)}else if(el)el.remove()}function render(data){if(!data||!Array.isArray(data.images))return;let box=document.getElementById('foe-related-images');if(!box){box=document.createElement('section');box.id='foe-related-images';box.className='foe-images';const host=document.querySelector('main')||document.querySelector('.shell')||document.body;host.appendChild(box)}const images=data.images;if(!images.length){box.innerHTML='<h3>Related Images</h3><div style="color:#8fa1ba">No related images were found.</div>';return}box.innerHTML='<h3>Related Images <span style="font-size:12px;font-weight:400;color:#8fa1ba">'+images.length+' found</span></h3><div class="foe-images-grid">'+images.map(i=>{const display=i.thumbnail||i.url;return '<a class="foe-image" href="'+esc(i.url)+'" target="_blank" rel="noopener noreferrer"><img loading="lazy" src="'+esc(display)+'" alt="'+esc(i.caption||'Related image')+'" onerror="this.closest(\'.foe-image\').remove()"><div>'+esc(i.caption||'Related image')+'<small>'+esc(i.sourceTitle||i.sourceUrl||'Source')+'</small></div></a>'}).join('')+'</div>'}window.fetch=async function(){const requestUrl=typeof arguments[0]==='string'?arguments[0]:arguments[0]?.url||'';let isInvestigation=false;try{isInvestigation=new URL(requestUrl,location.href).pathname==='/investigate'}catch{}if(isInvestigation)loading(true);try{const response=await originalFetch.apply(null,arguments);try{if(isInvestigation){const clone=response.clone();const data=await clone.json();render(data)}}catch(e){}return response}finally{if(isInvestigation)loading(false)}};document.addEventListener('submit',function(e){const form=e.target;if(form&&form.querySelector('input[name="q"],input[type="search"],input[placeholder*="search" i]'))loading(true)},true)})()</script>`;
-  const html = (await response.text())
-    .replace('placeholder="e.g. Ramzul Mazwan Ramli"', 'placeholder="Enter a name or search term..."')
-    .replace("Free public-source workflow • bounded search depth to control cost and noise", "Search a person, organisation, username or keyword • bounded search depth to control cost and noise")
-    .replace("</body>", `${imagePanel}</body>`);
-  headers.set("content-type", "text/html; charset=UTF-8");
-  headers.set("cache-control", "no-store");
-  headers.set("Access-Control-Allow-Origin", "*");
-  return new Response(html, { status: response.status >= 200 && response.status <= 599 ? response.status : 200, headers });
-}
-
-export default {
-  async fetch(request, env, ctx) {
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
-    try {
-      const url = new URL(request.url);
-      if (url.pathname === "/investigate") {
-        const subject = url.searchParams.get("q")?.trim();
-        if (!subject) return Response.json({ status: "error", message: "Missing investigation query", usage: "/investigate?q=Name&depth=1" }, { status: 400, headers: CORS_HEADERS });
-        const provider = url.searchParams.get("provider")?.trim().toLowerCase() || null;
-        const depth = url.searchParams.get("depth") || "1";
-        const investigation = await runInvestigation(subject, env, provider, depth);
-        return Response.json(await enrichWithImages(investigation, env, provider), { status: 200, headers: CORS_HEADERS });
-      }
-      const app = await loadApp();
-      if (!app || typeof app.fetch !== "function") throw new Error("investigate.js did not export a valid fetch handler");
-      if (url.pathname === "/") return await handleRoot(request, env, ctx, app);
-      return await normalizeAppResponse(await app.fetch(request, env, ctx));
-    } catch (error) {
-      return jsonError("worker-fetch", error, 500);
-    }
-  },
-};
+const CORS_HEADERS={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"GET, OPTIONS","Access-Control-Allow-Headers":"Content-Type, Accept","Access-Control-Max-Age":"86400"};
+function jsonError(stage,error,status=500){const safeStatus=Number.isInteger(status)&&status>=200&&status<=599?status:500;return Response.json({status:"error",stage,message:error?.message||String(error||"Unknown worker error")},{status:safeStatus,headers:CORS_HEADERS});}
+async function loadApp(){const module=await import("./investigate.js");return module.default;}
+async function normalizeAppResponse(value,{html=false}={}){if(value instanceof Response)return value;if(html){if(typeof value==="string")return new Response(value,{status:200,headers:{...CORS_HEADERS,"content-type":"text/html; charset=UTF-8","cache-control":"no-store"}});throw new Error("Application root returned an unsupported value");}if(value!==null&&typeof value==="object")return Response.json(value,{status:200,headers:CORS_HEADERS});if(typeof value==="string")return new Response(value,{status:200,headers:{...CORS_HEADERS,"content-type":"text/plain; charset=UTF-8"}});throw new Error("Application returned an unsupported value");}
+async function handleRoot(request,env,ctx,app){const raw=await app.fetch(request,env,ctx);const response=await normalizeAppResponse(raw,{html:true});const headers=new Headers(response.headers);if(!(headers.get("content-type")||"").includes("text/html"))return response;
+const imagePanel=`<style id="foe-image-style">.foe-images{margin:16px 0}.foe-images-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}.foe-image{display:block;border:1px solid #233149;border-radius:12px;overflow:hidden;background:#111b2b;color:#edf4ff;text-decoration:none}.foe-image img{display:block;width:100%;height:150px;object-fit:cover}.foe-image div{padding:9px;font-size:12px}.foe-image small{display:block;color:#8fa1ba;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.foe-image-empty{color:#8fa1ba;padding:14px;border:1px dashed #2a3a52;border-radius:11px}</style><script>(function(){function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;')}function renderImages(data){if(!data||!Array.isArray(data.images))return;let box=document.getElementById('foe-related-images');if(!box){box=document.createElement('section');box.id='foe-related-images';box.className='card foe-images';box.innerHTML='<div class="cardhead"><h3>Related Images</h3><span class="pill" id="foe-image-count"></span></div><div class="cardbody"><div id="foe-image-body"></div></div>';const results=document.getElementById('results');if(results){const footer=results.querySelector('.footer');if(footer)results.insertBefore(box,footer);else results.appendChild(box)}else document.body.appendChild(box)}const body=document.getElementById('foe-image-body');if(!body)return;const images=data.images;if(!images.length){body.innerHTML='<div class="foe-image-empty">No relevant images were found for this investigation.</div>';const count=document.getElementById('foe-image-count');if(count)count.textContent='0 found';return}const count=document.getElementById('foe-image-count');if(count)count.textContent=images.length+' found';body.innerHTML='<div class="foe-images-grid">'+images.map(i=>{const display=i.thumbnail||i.url;return '<a class="foe-image" href="'+esc(i.url)+'" target="_blank" rel="noopener noreferrer"><img loading="lazy" src="'+esc(display)+'" alt="'+esc(i.caption||'Related image')+'" onerror="this.closest(\'.foe-image\').remove()"><div>'+esc(i.caption||'Related image')+'<small>'+esc(i.sourceTitle||i.sourceUrl||'Source')+'</small></div></a>'}).join('')+'</div>'}function hook(){const original=window.render;if(typeof original==='function'&&!original.__foeWrapped){const wrapped=function(data){const value=original.apply(this,arguments);try{renderImages(data)}catch(e){}return value};wrapped.__foeWrapped=true;window.render=wrapped}}hook();setTimeout(hook,0);setTimeout(hook,100);setTimeout(hook,500);window.addEventListener('foe:investigation-complete',e=>renderImages(e.detail))})()</script>`;
+const html=(await response.text()).replace('placeholder="e.g. Ramzul Mazwan Ramli"','placeholder="Enter a name or search term..."').replace("Free public-source workflow • bounded search depth to control cost and noise","Search a person, organisation, username or keyword • bounded search depth to control cost and noise").replace("</body>",`${imagePanel}</body>`);headers.set("content-type","text/html; charset=UTF-8");headers.set("cache-control","no-store");headers.set("Access-Control-Allow-Origin","*");return new Response(html,{status:response.status>=200&&response.status<=599?response.status:200,headers});}
+export default{async fetch(request,env,ctx){if(request.method==="OPTIONS")return new Response(null,{status:204,headers:CORS_HEADERS});try{const url=new URL(request.url);if(url.pathname==="/investigate"){const subject=url.searchParams.get("q")?.trim();if(!subject)return Response.json({status:"error",message:"Missing investigation query",usage:"/investigate?q=Name&depth=1"},{status:400,headers:CORS_HEADERS});const provider=url.searchParams.get("provider")?.trim().toLowerCase()||null;const depth=url.searchParams.get("depth")||"1";const investigation=await runInvestigation(subject,env,provider,depth);return Response.json(await enrichWithImages(investigation,env,provider),{status:200,headers:CORS_HEADERS});}const app=await loadApp();if(!app||typeof app.fetch!=="function")throw new Error("investigate.js did not export a valid fetch handler");if(url.pathname==="/")return await handleRoot(request,env,ctx,app);return await normalizeAppResponse(await app.fetch(request,env,ctx));}catch(error){return jsonError("worker-fetch",error,500);}}};
