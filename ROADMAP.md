@@ -90,6 +90,9 @@ Status: WORKING / IDENTITY RESOLUTION INITIAL IMPLEMENTATION
 - [x] Initial person-candidate grouping
 - [x] Initial identity-resolution scoring
 - [x] Account-to-candidate association
+- [x] Related image discovery
+- [x] Image source/page provenance
+- [x] Bounded image collection
 - [ ] Evidence/source provenance completeness
 - [ ] Better entity confidence
 - [ ] Source confidence
@@ -131,18 +134,21 @@ Status: PLANNED
 
 ## Phase 7 — Investigation UI
 
-Status: PLANNED
+Status: INITIAL UI + RELATED IMAGES WORKING
 
-- [ ] Search interface
-- [ ] Investigation configuration
+- [x] Search interface
+- [x] Investigation configuration
 - [ ] Progress indicator
-- [ ] Results page
+- [x] Results page
 - [ ] Entity explorer
-- [ ] Source explorer
+- [x] Source explorer
 - [ ] Relationship explorer
 - [ ] Mind map
 - [ ] Timeline
-- [ ] Evidence panel
+- [x] Evidence panel
+- [x] Related Images panel
+- [x] Click-through image → original image URL
+- [x] Click-through image → source page provenance
 
 ## Phase 8 — Reporting
 
@@ -194,12 +200,17 @@ Status: FUTURE
 
 1. Test the new person-candidate grouping with the golden identities.
 2. Verify that overlapping names such as `Ramzul Ramli`, `Ramzul Mazwan Ramli`, and `Ramzulhakim Ramli` remain separate candidates unless corroborating signals connect them.
-3. Preserve complete source/evidence provenance.
+3. Preserve complete source/evidence provenance, including image provenance.
 4. Improve confidence calibration so 1.00 never implies certainty.
 5. Add stronger cross-source corroboration.
 6. Run the golden investigations and compare false merges/false splits.
 7. Only after those pass, increase recursion depth/budgets.
 8. Build relationship/graph structures.
-9. Build UI and reporting.
+9. Build richer UI and reporting.
+10. Later: image metadata and reverse-image search as separate advanced capabilities.
+
+### Related Images scope
+
+The current implementation discovers images exposed by investigated source pages using standard HTML image signals such as `img`, `srcset`, Open Graph and Twitter image metadata. It records the image URL, source page, source title and available caption/alt text. It does **not** perform face recognition or claim that an image proves a person's identity.
 
 Do not jump directly to unrestricted crawling.
