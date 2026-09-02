@@ -1,10 +1,17 @@
-# Free OSINT Explorer — Project Status
+# Silk Stalker — Project Status
 
-Last updated: 2026-08-30
+Last updated: 2026-09-03
 
 ## Goal
 
 Build a free/RM0 where practical, on-demand OSINT discovery and investigation system using GitHub + Cloudflare Workers. No always-running server.
+
+## Product / Branding
+
+- Product/UI name: **Silk Stalker**.
+- Repository name remains `ramzulramli/free-osint-explorer` for now.
+- Current free Worker hostname remains `free-osint-explorer.ramzul.workers.dev`.
+- No paid custom domain is planned at this stage.
 
 ## Current Position
 
@@ -27,15 +34,10 @@ Phase 10 Optimization           FUTURE
 - Repository: `ramzulramli/free-osint-explorer`
 - Worker: `free-osint-explorer`
 - Production: `https://free-osint-explorer.ramzul.workers.dev`
-- Main Worker entry point: `src/index.js`
-- Investigation implementation: `src/investigate.js`
+- Main Worker entry point: `src/worker.js`
+- Investigation UI module: `src/investigate.js`
+- Canonical investigation engine: `src/investigation-engine.js`
 - GitHub → Cloudflare deployment is configured.
-
-### Deployment note — 2026-08-30
-
-The recent development branch `svgui-v2-live-investigation` went through several Cloudflare versions/builds while fixing Worker response handling. Cloudflare's Version History and Recent Builds are separate concepts: a build can exist without being the active production deployment. The production service may therefore require an explicit **Promote** action when branch/version controls are configured that way.
-
-Important fixes reached `main` in commit `d80b3f9cdb16a8ee20ad8c4beaea399939dfeedb` (`sync: promote live investigation implementation to main`). The latest known main branch commit contains the live investigation implementation.
 
 ## Current APIs
 
@@ -80,6 +82,7 @@ Controlled investigation workflow:
 7. Extract entities and account candidates from page content.
 8. Aggregate evidence and preserve source provenance.
 9. Score and filter discoveries.
+10. Optionally pivot through bounded related queries.
 
 The API returns investigation subject/query, confidence signal, candidates, accounts, related entities, evidence, sources, query history, failures and bounded execution statistics.
 
@@ -87,12 +90,15 @@ Status: **LIVE / WORKING**
 
 ### Investigation UI
 
-The Worker root `/` now serves a live investigation dashboard directly from the Worker. The UI calls `/investigate` and renders the real JSON response rather than static sample data.
+The Worker root `/` serves the live investigation dashboard directly from the Worker. The UI calls `/investigate` and renders the real JSON response rather than static sample data.
 
 Implemented:
+- Silk Stalker branding;
+- `Stalk a person` search prompt;
+- `STALK` investigation action;
 - investigation search box;
 - Direct search / Follow-up / Deep investigation depth selector;
-- loading state;
+- loading state infrastructure (animation remains intentionally non-priority);
 - error state;
 - primary subject card;
 - confidence/match signal visualization;
@@ -102,7 +108,10 @@ Implemented:
 - evidence trail;
 - inspected sources with clickable links;
 - investigation statistics;
+- related images;
 - responsive layout.
+
+Normal UI searches now submit the subject via `POST /investigate` JSON rather than putting the subject in the request query string. Legacy GET remains supported for compatibility.
 
 The UI deliberately labels confidence as a **match signal**, not proof of identity.
 
@@ -134,19 +143,6 @@ Ramzulhakim Ramli        = different person
 
 The engine must never merge people solely because names are similar. Identity requires corroborating evidence across independent dimensions.
 
-## Current Test Subjects
-
-```text
-Fauzi Ariffin
-Shazzuwan Zakaria
-Ramli Musa
-Ramzul Mazwan bin Ramli
-Ramzul Ramli
-Ramzulhakim Ramli
-```
-
-These are development test subjects. Results must be treated as public-source leads, not proof of identity.
-
 ## Known Issues / Technical Debt
 
 1. Generic page-title fragments can still be emitted as `person_candidate` values.
@@ -177,4 +173,4 @@ Do not get stuck in endless isolated search tests. Each test must validate or im
 
 ## Resume Note
 
-**Current engineering milestone: live investigation UI and evidence-v2 response are working on main. Next coding milestone: evidence-backed signal cards + stronger entity/identity corroboration, followed by graph, history and reporting. `Ramli Musa` remains a key same-name separation regression test.**
+**Current engineering milestone: Silk Stalker branded live investigation UI, related images, POST query privacy and evidence-v2 response are working in the Worker codebase. Next coding milestone: evidence-backed signal cards + stronger entity/identity corroboration, followed by graph, history and reporting. `Ramli Musa` remains a key same-name separation regression test.**
