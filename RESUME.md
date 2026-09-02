@@ -1,26 +1,25 @@
-# Free OSINT Explorer — Resume Point
+# Silk Stalker — Resume Point
 
-Last updated: 2026-08-30
+Last updated: 2026-09-03
 
 > **Canonical quick-resume note for the next coding session.**
 
 ## Product
 
 - Repository: `ramzulramli/free-osint-explorer`
-- Current name: **Free OSINT Explorer**
-- Planned final name: **Silk Stalker**
-- Do not rename yet. Rename after the architecture, dynamic UI and investigation workflow are stable.
+- Product/UI name: **Silk Stalker**
+- Repository rename: not done; keep repository name unchanged for now.
+- Current free Worker URL: `https://free-osint-explorer.ramzul.workers.dev`
+- Paid custom domain: not planned at this stage.
 - Goal: free/RM0 where practical, on-demand OSINT discovery/investigation using GitHub + Cloudflare Workers; no always-running server.
 
 ## Current state
 
-The live investigation implementation is now synchronized to `main`.
+The live investigation implementation is synchronized to `main`.
 
-Main sync commit:
+The current Worker entry point is `src/worker.js`; it imports the canonical investigation engine and image evidence module, and loads the dashboard from `src/investigate.js`.
 
-`d80b3f9cdb16a8ee20ad8c4beaea399939dfeedb` — `sync: promote live investigation implementation to main`
-
-The Worker root `/` serves the live investigation dashboard and `/investigate` returns structured JSON.
+The Worker root `/` serves the Silk Stalker investigation dashboard and `/investigate` returns structured JSON.
 
 ## What is working
 
@@ -42,15 +41,18 @@ The Worker root `/` serves the live investigation dashboard and `/investigate` r
 - Account/profile extraction works for recognizable public profile URLs.
 - Evidence-v2 assessment exposes confidence, level and reasons instead of relying only on a raw score.
 - Source failures such as HTTP 429/999 are preserved in the response.
+- Related image discovery is implemented with source/page provenance.
 - Identity resolution remains a match signal, not proof of identity.
 
 ### UI
-The dashboard is now live in the Worker rather than a static preview.
+The dashboard is live in the Worker rather than a static preview.
 
 Implemented:
+- Silk Stalker branding;
+- `Stalk a person` prompt;
+- `STALK` action button;
 - search box;
 - Direct search / Follow-up / Deep investigation depth selector;
-- loading state;
 - error state;
 - primary subject card;
 - confidence visualization;
@@ -60,15 +62,16 @@ Implemented:
 - evidence trail;
 - inspected sources with clickable links;
 - investigation statistics;
+- related images;
 - responsive layout.
 
-## Recent deployment lesson
+Normal UI investigations use `POST /investigate` with JSON `{q, provider, depth}` so the subject is not placed in the request URL. Legacy GET remains available for compatibility.
+
+The loading animation experiment is intentionally not a current priority.
+
+## Important deployment note
 
 Cloudflare **Builds** and **Versions** are not the same thing as the active production deployment.
-
-During the live UI fixes, builds were created automatically from the development branch, but the active production deployment remained on an older version until the required version was manually promoted. This is expected under the current Cloudflare branch/version configuration and is not evidence that the project is broken.
-
-Recent Worker response errors were traced through several versions, including invalid response-status handling and a non-Response return path. The implementation was then synchronized back to `main`.
 
 For future production verification:
 
@@ -83,6 +86,22 @@ Promote when branch/version controls require it
    ↓
 Test production Worker
 ```
+
+Do not claim production is updated merely because a GitHub commit exists. Verify the actual Worker when a live deployment matters.
+
+## Latest product direction
+
+The product branding is now **Silk Stalker** while the GitHub repository and free Cloudflare hostname remain unchanged.
+
+The normal UI wording is:
+
+```text
+Stalk a person
+        ↓
+      STALK
+```
+
+Search subjects are intentionally sent through POST rather than query parameters in the normal browser workflow.
 
 ## Latest important live test: `Fauzi Ariffin`
 
@@ -188,7 +207,7 @@ Do not increase recursion/crawl budgets before the golden tests pass.
 
 Keep conservative:
 - search results: 5;
-- investigation pages: 5 in current live implementation;
+- investigation pages: 5;
 - ranked people: 10;
 - related signals: 10 per group;
 - name variants: bounded;
