@@ -1,6 +1,6 @@
-# Free OSINT Explorer — Architecture
+# Silk Stalker — Architecture
 
-Last updated: 2026-08-30
+Last updated: 2026-09-03
 
 ## Current Architecture Status
 
@@ -132,15 +132,15 @@ Current limits remain conservative, including bounded search results, page reads
 
 ## Live Investigation UI
 
-The V2 UI is implemented on branch `ui-v2-live-investigation` and consumes the `/investigate` JSON response.
+The Worker root serves the live Silk Stalker investigation dashboard and consumes the `/investigate` JSON response.
 
 ```text
 Browser
   │
   ▼
-Live dashboard
+Silk Stalker dashboard
   │
-  │ GET /investigate?q=<subject>
+  │ POST /investigate { q, depth, provider }
   ▼
 Cloudflare Worker
   │
@@ -160,6 +160,8 @@ JSON response
 Dashboard renderer
 ```
 
+Normal UI searches send the subject in the POST body instead of the query string. Legacy GET `/investigate?q=...` remains supported for compatibility, but the normal browser workflow keeps the subject out of the address bar and request URL.
+
 The dashboard presents:
 - primary subject;
 - confidence/match signal;
@@ -169,35 +171,10 @@ The dashboard presents:
 - public contact signal area;
 - identity signals;
 - sources;
-- investigation statistics.
+- investigation statistics;
+- related images.
 
-The V2 dashboard has been successfully verified against a real investigation in the Worker version preview.
-
-## Production Verification Problem
-
-The Worker version preview for the latest UI deployment was reachable and `/investigate` successfully returned investigation data. However, after promotion to production, the browser UI still reported `Failed to fetch`.
-
-This means production verification is currently a separate engineering problem from the investigation engine.
-
-Debug order:
-
-```text
-Production UI
-    │
-    ├── direct production /investigate test
-    │
-    ├── browser Network/Console
-    │
-    ├── CORS response headers
-    │
-    ├── API URL/path
-    │
-    ├── Worker entry point/version
-    │
-    └── environment bindings
-```
-
-Do not change the investigation engine until this connectivity path is isolated.
+The primary action is branded **STALK**, with the search prompt **Stalk a person**.
 
 ## Identity Resolution Principle
 
@@ -324,20 +301,19 @@ Recent testing established:
 6. **Identity separation remains required.** Similar names must not be merged without corroboration.
 7. **Source provenance is incomplete.** Evidence can reference more pages than the current top-level source list exposes.
 8. **Confidence calibration is incomplete.** A high model score is not equivalent to certainty.
-9. **Live UI rendering works in Worker preview.**
-10. **Production UI still has a `Failed to fetch` blocker after promotion.**
+9. **Live UI rendering works in the Worker.**
+10. **Loading animation remains intentionally non-priority.** The UI is functional without it.
 
 ## Immediate Architectural Step
 
-The next engineering step is **production connectivity diagnosis**, followed by evidence quality:
+The next engineering step is **evidence quality and identity corroboration**, followed by richer investigation UX:
 
-- verify production `/investigate` directly;
-- isolate CORS/path/version/environment differences;
 - preserve source provenance for every entity/account discovery;
 - reject generic page-title/UI fragments as person candidates;
 - consolidate duplicates across recursion;
 - calibrate confidence;
 - strengthen identity resolution using independent corroborating signals;
-- rerun the golden investigations.
+- rerun the golden investigations;
+- then build relationship extraction, graph, history and reporting.
 
 Only after these tests pass should deeper recursion, relationship extraction and the knowledge graph be expanded.
