@@ -1,4 +1,4 @@
-# Free OSINT Explorer — Roadmap
+# Silk Stalker — Roadmap
 
 ## Phase 0 — Infrastructure
 
@@ -134,11 +134,14 @@ Status: PLANNED
 
 ## Phase 7 — Investigation UI
 
-Status: INITIAL UI + RELATED IMAGES WORKING
+Status: LIVE UI + RELATED IMAGES + PRIVACY/BRANDING UPDATE
 
+- [x] Silk Stalker branding
+- [x] `Stalk a person` prompt
+- [x] `STALK` action button
 - [x] Search interface
 - [x] Investigation configuration
-- [ ] Progress indicator
+- [ ] Progress indicator animation
 - [x] Results page
 - [ ] Entity explorer
 - [x] Source explorer
@@ -149,6 +152,8 @@ Status: INITIAL UI + RELATED IMAGES WORKING
 - [x] Related Images panel
 - [x] Click-through image → original image URL
 - [x] Click-through image → source page provenance
+- [x] Responsive layout
+- [x] POST investigation requests to keep subject names out of query URLs
 
 ## Phase 8 — Reporting
 
@@ -198,16 +203,16 @@ Status: FUTURE
 
 ## Current Priority
 
-1. Test the new person-candidate grouping with the golden identities.
-2. Verify that overlapping names such as `Ramzul Ramli`, `Ramzul Mazwan Ramli`, and `Ramzulhakim Ramli` remain separate candidates unless corroborating signals connect them.
-3. Preserve complete source/evidence provenance, including image provenance.
-4. Improve confidence calibration so 1.00 never implies certainty.
-5. Add stronger cross-source corroboration.
-6. Run the golden investigations and compare false merges/false splits.
-7. Only after those pass, increase recursion depth/budgets.
-8. Build relationship/graph structures.
-9. Build richer UI and reporting.
-10. Later: image metadata and reverse-image search as separate advanced capabilities.
+1. Build evidence-backed signal cards.
+2. Improve entity-noise filtering.
+3. Strengthen identity corroboration using independent evidence dimensions.
+4. Preserve complete source/evidence provenance.
+5. Re-run the golden investigations and compare false merges/false splits.
+6. Verify the production Worker after deployment/promotion.
+7. Build relationship/graph structures.
+8. Add browser/session investigation history.
+9. Build reporting/export.
+10. Only after identity/evidence quality is acceptable, consider broader recursion and advanced OSINT modules.
 
 ### Related Images scope
 
